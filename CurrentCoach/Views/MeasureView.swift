@@ -35,7 +35,7 @@ struct MeasureView: View {
                 HStack(spacing: 0) {
                     UnitLabel(title: "KTS", value: String(format: "%.2f", viewModel.speedKnots))
                     Divider().frame(height: 30).overlay(NT.textDim)
-                    UnitLabel(title: "CM/S", value: String(format: "%.2f", viewModel.speedCmPerSecond))
+                    ConfidenceLabel(confidence: viewModel.confidence)
                     Divider().frame(height: 30).overlay(NT.textDim)
                     UnitLabel(title: "M/S", value: String(format: "%.2f", viewModel.speedMetersPerSecond))
                 }
@@ -258,6 +258,30 @@ private struct UnitLabel: View {
             Text(value)
                 .font(.system(size: 22, weight: .bold, design: .monospaced))
                 .foregroundStyle(NT.textPrimary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct ConfidenceLabel: View {
+    let confidence: Double
+
+    private var confidenceColor: Color {
+        if confidence < 70 { return NT.accentCoral }
+        if confidence < 80 { return .orange }
+        if confidence < 90 { return .yellow }
+        return NT.gpsGreat
+    }
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Text("CONF")
+                .font(.caption2)
+                .fontWeight(.semibold)
+                .foregroundStyle(NT.accentAmber)
+            Text(String(format: "%.0f%%", confidence))
+                .font(.system(size: 22, weight: .bold, design: .monospaced))
+                .foregroundStyle(confidenceColor)
         }
         .frame(maxWidth: .infinity)
     }
