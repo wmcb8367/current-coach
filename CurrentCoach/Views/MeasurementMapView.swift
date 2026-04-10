@@ -4,7 +4,7 @@ import MapKit
 enum MapDisplayStyle: String, CaseIterable {
     case standard = "Standard"
     case satellite = "Satellite"
-    case hybrid = "Hybrid"
+    case charts = "Charts"
 }
 
 struct MeasurementMapView: View {
@@ -15,6 +15,10 @@ struct MeasurementMapView: View {
     @State private var selectedDate: Date = Date()
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var mapStyle: MapDisplayStyle = .standard
+    @State private var nauticalRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 39.5, longitude: 2.7),
+        span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
+    )
 
     private var filteredMeasurements: [TideMeasurement] {
         store.measurements(for: filter, date: selectedDate)
@@ -25,25 +29,30 @@ struct MeasurementMapView: View {
             NT.bgPrimary.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Map
-                Map(position: $cameraPosition) {
-                    UserAnnotation()
+                if mapStyle == .charts {
+                    // Nautical chart mode with OpenSeaMap overlay
+                    NauticalMapView(
+                        measurements: filteredMeasurements,
+                        showChartOverlay: true,
+                        region: $nauticalRegion
+                    )
+                } else {
+                    // Standard SwiftUI Map
+                    Map(position: $cameraPosition) {
+                        UserAnnotation()
 
-                    ForEach(filteredMeasurements) { measurement in
-                        Annotation(
-                            "",
-                            coordinate: measurement.coordinate,
-                            anchor: .center
-                        ) {
-                            CurrentArrowView(measurement: measurement)
+                        ForEach(filteredMeasurements) { measurement in
+                            Annotation("", coordinate: measurement.coordinate, anchor: .center) {
+                                CurrentArrowView(measurement: measurement)
+                            }
                         }
                     }
-                }
-                .mapStyle(mapStyle == .satellite ? .imagery(elevation: .flat) : mapStyle == .hybrid ? .hybrid(elevation: .flat) : .standard)
-                .mapControls {
-                    MapUserLocationButton()
-                    MapCompass()
-                    MapScaleView()
+                    .mapStyle(mapStyle == .satellite ? .imagery(elevation: .flat) : .standard)
+                    .mapControls {
+                        MapUserLocationButton()
+                        MapCompass()
+                        MapScaleView()
+                    }
                 }
 
                 // Controls bar
@@ -87,9 +96,28 @@ struct MeasurementMapView: View {
         .onChange(of: filteredMeasurements) {
             updateCamera()
         }
+        .onChange(of: mapStyle) {
+            if mapStyle == .charts {
+                syncToNauticalRegion()
+            }
+        }
         .onAppear {
             updateCamera()
         }
+    }
+
+    private func syncToNauticalRegion() {
+        let measurements = filteredMeasurements
+        if measurements.isEmpty {
+            if let loc = locationService.currentLocation {
+                nauticalRegion = MKCoordinateRegion(
+                    center: loc.coordinate,
+                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+                )
+            }
+            return
+        }
+        nauticalRegion = regionForMeasurements(measurements)
     }
 
     private func updateCamera() {
@@ -103,25 +131,24 @@ struct MeasurementMapView: View {
             }
             return
         }
+        cameraPosition = .region(regionForMeasurements(measurements))
+    }
 
+    private func regionForMeasurements(_ measurements: [TideMeasurement]) -> MKCoordinateRegion {
         let lats = measurements.map(\.latitude)
         let lons = measurements.map(\.longitude)
         guard let minLat = lats.min(), let maxLat = lats.max(),
-              let minLon = lons.min(), let maxLon = lons.max() else { return }
-
-        let center = CLLocationCoordinate2D(
-            latitude: (minLat + maxLat) / 2,
-            longitude: (minLon + maxLon) / 2
+              let minLon = lons.min(), let maxLon = lons.max() else {
+            return MKCoordinateRegion()
+        }
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2),
+            span: MKCoordinateSpan(latitudeDelta: max(0.01, (maxLat - minLat) * 1.5), longitudeDelta: max(0.01, (maxLon - minLon) * 1.5))
         )
-        let span = MKCoordinateSpan(
-            latitudeDelta: max(0.01, (maxLat - minLat) * 1.5),
-            longitudeDelta: max(0.01, (maxLon - minLon) * 1.5)
-        )
-        cameraPosition = .region(MKCoordinateRegion(center: center, span: span))
     }
 }
 
-// MARK: - Arrow Annotation
+// MARK: - Arrow Annotation (for SwiftUI Map modes)
 
 private struct CurrentArrowView: View {
     let measurement: TideMeasurement
