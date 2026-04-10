@@ -13,6 +13,7 @@
 		15A6268DFC0CFC8159216F90 /* MeasurementMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3850EEA567A8DCBF11BF92F /* MeasurementMapView.swift */; };
 		2DF542861B63DBFE2BCEA7A0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3B704AEF21D198A2F386D453 /* Assets.xcassets */; };
 		34F423158FC54539B2B3AED1 /* MeasureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B08FB035FBD6A006DA3F59F9 /* MeasureView.swift */; };
+		43DBAB1DF40759936B0B26CA /* NauticalMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D2DCFA1DC43AAA1EB8D1FB1 /* NauticalMapView.swift */; };
 		76296F1DBCCD707A07536BF9 /* MeasurementListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913D8918D66372BCF5AEE669 /* MeasurementListView.swift */; };
 		7FBB7DF4F49A797DFB8FCA75 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F438E0BC11D741B74A55F7D /* ContentView.swift */; };
 		B643DDD986CF468894E2CF64 /* LocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F920BB4E5FF24317ED54A338 /* LocationService.swift */; };
@@ -35,6 +36,7 @@
 /* Begin PBXFileReference section */
 		1E7149408E4F54B5AC7E49BF /* MeasureViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasureViewModel.swift; sourceTree = "<group>"; };
 		3B704AEF21D198A2F386D453 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		3D2DCFA1DC43AAA1EB8D1FB1 /* NauticalMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NauticalMapView.swift; sourceTree = "<group>"; };
 		4027E96B549EE4487D596506 /* TideMeasurement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TideMeasurement.swift; sourceTree = "<group>"; };
 		4F438E0BC11D741B74A55F7D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		5C9FEE9B14EF13DF12EA5E78 /* CurrentCoachTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CurrentCoachTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -142,6 +144,7 @@
 				913D8918D66372BCF5AEE669 /* MeasurementListView.swift */,
 				D3850EEA567A8DCBF11BF92F /* MeasurementMapView.swift */,
 				B08FB035FBD6A006DA3F59F9 /* MeasureView.swift */,
+				3D2DCFA1DC43AAA1EB8D1FB1 /* NauticalMapView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -257,6 +260,7 @@
 				76296F1DBCCD707A07536BF9 /* MeasurementListView.swift in Sources */,
 				15A6268DFC0CFC8159216F90 /* MeasurementMapView.swift in Sources */,
 				D5BFE10232839A828AFA7986 /* MeasurementStore.swift in Sources */,
+				43DBAB1DF40759936B0B26CA /* NauticalMapView.swift in Sources */,
 				1377825AE4C5C8482FAA85E7 /* NauticalTheme.swift in Sources */,
 				D05FB838DFB531C3938980B9 /* TideMeasurement.swift in Sources */,
 			);
