@@ -1,0 +1,524 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		06314CC530BEFB18DB10386E /* TideMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC159BA3FCB412B202AE28EF /* TideMeasurementTests.swift */; };
+		0AEA43638EE795F06897A36C /* MeasureViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E7149408E4F54B5AC7E49BF /* MeasureViewModel.swift */; };
+		1377825AE4C5C8482FAA85E7 /* NauticalTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967B38C72E194D1533A2A75B /* NauticalTheme.swift */; };
+		15A6268DFC0CFC8159216F90 /* MeasurementMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3850EEA567A8DCBF11BF92F /* MeasurementMapView.swift */; };
+		2DF542861B63DBFE2BCEA7A0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3B704AEF21D198A2F386D453 /* Assets.xcassets */; };
+		34F423158FC54539B2B3AED1 /* MeasureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B08FB035FBD6A006DA3F59F9 /* MeasureView.swift */; };
+		76296F1DBCCD707A07536BF9 /* MeasurementListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913D8918D66372BCF5AEE669 /* MeasurementListView.swift */; };
+		7FBB7DF4F49A797DFB8FCA75 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F438E0BC11D741B74A55F7D /* ContentView.swift */; };
+		B643DDD986CF468894E2CF64 /* LocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F920BB4E5FF24317ED54A338 /* LocationService.swift */; };
+		BDB4AE5013F88ED250B7B1DA /* CurrentCoachApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3EB98BBBFE371A3C26150C0 /* CurrentCoachApp.swift */; };
+		D05FB838DFB531C3938980B9 /* TideMeasurement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4027E96B549EE4487D596506 /* TideMeasurement.swift */; };
+		D5BFE10232839A828AFA7986 /* MeasurementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E279BA698B37B17D98D9037A /* MeasurementStore.swift */; };
+		DF0C30982203F14A9E56E2D4 /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9516ED597EB0689C1E4B58F4 /* AccountView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4ED522C30D63E1738E526EC5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E25C22A9A51FA36A6BEE064E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 20FAA431342425F2589E85EA;
+			remoteInfo = CurrentCoach;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		1E7149408E4F54B5AC7E49BF /* MeasureViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasureViewModel.swift; sourceTree = "<group>"; };
+		3B704AEF21D198A2F386D453 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		4027E96B549EE4487D596506 /* TideMeasurement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TideMeasurement.swift; sourceTree = "<group>"; };
+		4F438E0BC11D741B74A55F7D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		5C9FEE9B14EF13DF12EA5E78 /* CurrentCoachTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CurrentCoachTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		76658760B21A4A085D74C11E /* CurrentCoach.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CurrentCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		913D8918D66372BCF5AEE669 /* MeasurementListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasurementListView.swift; sourceTree = "<group>"; };
+		9516ED597EB0689C1E4B58F4 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
+		967B38C72E194D1533A2A75B /* NauticalTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NauticalTheme.swift; sourceTree = "<group>"; };
+		A3EB98BBBFE371A3C26150C0 /* CurrentCoachApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentCoachApp.swift; sourceTree = "<group>"; };
+		B08FB035FBD6A006DA3F59F9 /* MeasureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasureView.swift; sourceTree = "<group>"; };
+		D3850EEA567A8DCBF11BF92F /* MeasurementMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasurementMapView.swift; sourceTree = "<group>"; };
+		DE1325CD10F5BF51F9B7167D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		E279BA698B37B17D98D9037A /* MeasurementStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasurementStore.swift; sourceTree = "<group>"; };
+		F920BB4E5FF24317ED54A338 /* LocationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationService.swift; sourceTree = "<group>"; };
+		FC159BA3FCB412B202AE28EF /* TideMeasurementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TideMeasurementTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		29074926D2AC220C135640A7 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				F920BB4E5FF24317ED54A338 /* LocationService.swift */,
+				E279BA698B37B17D98D9037A /* MeasurementStore.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		2A7C71A469E1E4AF65F5908A /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				3B704AEF21D198A2F386D453 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		4FF35AF7138F788175DCA902 /* CurrentCoach */ = {
+			isa = PBXGroup;
+			children = (
+				8323C0D437583CD0679C32C1 /* App */,
+				D8D9E32255ED7B0D24627775 /* Models */,
+				2A7C71A469E1E4AF65F5908A /* Resources */,
+				29074926D2AC220C135640A7 /* Services */,
+				7951CFB012D4237A2E0C82E3 /* Theme */,
+				797D884626AB8400166D5082 /* ViewModels */,
+				BB5C51B5B5770DCE83EACB3B /* Views */,
+				DE1325CD10F5BF51F9B7167D /* Info.plist */,
+			);
+			path = CurrentCoach;
+			sourceTree = "<group>";
+		};
+		7951CFB012D4237A2E0C82E3 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				967B38C72E194D1533A2A75B /* NauticalTheme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		797D884626AB8400166D5082 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				1E7149408E4F54B5AC7E49BF /* MeasureViewModel.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		82F5F25E431813EA0535FB8E /* CurrentCoachTests */ = {
+			isa = PBXGroup;
+			children = (
+				FC159BA3FCB412B202AE28EF /* TideMeasurementTests.swift */,
+			);
+			path = CurrentCoachTests;
+			sourceTree = "<group>";
+		};
+		8323C0D437583CD0679C32C1 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				A3EB98BBBFE371A3C26150C0 /* CurrentCoachApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		968DECB9B61744384A4DE36A = {
+			isa = PBXGroup;
+			children = (
+				4FF35AF7138F788175DCA902 /* CurrentCoach */,
+				82F5F25E431813EA0535FB8E /* CurrentCoachTests */,
+				9F456434EBF41E644E4569AF /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		9F456434EBF41E644E4569AF /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				76658760B21A4A085D74C11E /* CurrentCoach.app */,
+				5C9FEE9B14EF13DF12EA5E78 /* CurrentCoachTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		BB5C51B5B5770DCE83EACB3B /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				9516ED597EB0689C1E4B58F4 /* AccountView.swift */,
+				4F438E0BC11D741B74A55F7D /* ContentView.swift */,
+				913D8918D66372BCF5AEE669 /* MeasurementListView.swift */,
+				D3850EEA567A8DCBF11BF92F /* MeasurementMapView.swift */,
+				B08FB035FBD6A006DA3F59F9 /* MeasureView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		D8D9E32255ED7B0D24627775 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				4027E96B549EE4487D596506 /* TideMeasurement.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		20FAA431342425F2589E85EA /* CurrentCoach */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D7858B7B005753BE50E0DA6A /* Build configuration list for PBXNativeTarget "CurrentCoach" */;
+			buildPhases = (
+				6CDE01EE66D68D2B33E3065D /* Sources */,
+				C6ED673135027F615EEFB0B8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CurrentCoach;
+			packageProductDependencies = (
+			);
+			productName = CurrentCoach;
+			productReference = 76658760B21A4A085D74C11E /* CurrentCoach.app */;
+			productType = "com.apple.product-type.application";
+		};
+		9DE10A71AB731108D1CBF2DE /* CurrentCoachTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B9EB71E4E79DED7A018D4E7C /* Build configuration list for PBXNativeTarget "CurrentCoachTests" */;
+			buildPhases = (
+				27EDBE1D09DAF3F78BE3FA87 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				063A194974D142FD43DF6E11 /* PBXTargetDependency */,
+			);
+			name = CurrentCoachTests;
+			packageProductDependencies = (
+			);
+			productName = CurrentCoachTests;
+			productReference = 5C9FEE9B14EF13DF12EA5E78 /* CurrentCoachTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E25C22A9A51FA36A6BEE064E /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 33F536B560A5725AA4AEF13E /* Build configuration list for PBXProject "CurrentCoach" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 968DECB9B61744384A4DE36A;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 9F456434EBF41E644E4569AF /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				20FAA431342425F2589E85EA /* CurrentCoach */,
+				9DE10A71AB731108D1CBF2DE /* CurrentCoachTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C6ED673135027F615EEFB0B8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2DF542861B63DBFE2BCEA7A0 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		27EDBE1D09DAF3F78BE3FA87 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				06314CC530BEFB18DB10386E /* TideMeasurementTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6CDE01EE66D68D2B33E3065D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DF0C30982203F14A9E56E2D4 /* AccountView.swift in Sources */,
+				7FBB7DF4F49A797DFB8FCA75 /* ContentView.swift in Sources */,
+				BDB4AE5013F88ED250B7B1DA /* CurrentCoachApp.swift in Sources */,
+				B643DDD986CF468894E2CF64 /* LocationService.swift in Sources */,
+				34F423158FC54539B2B3AED1 /* MeasureView.swift in Sources */,
+				0AEA43638EE795F06897A36C /* MeasureViewModel.swift in Sources */,
+				76296F1DBCCD707A07536BF9 /* MeasurementListView.swift in Sources */,
+				15A6268DFC0CFC8159216F90 /* MeasurementMapView.swift in Sources */,
+				D5BFE10232839A828AFA7986 /* MeasurementStore.swift in Sources */,
+				1377825AE4C5C8482FAA85E7 /* NauticalTheme.swift in Sources */,
+				D05FB838DFB531C3938980B9 /* TideMeasurement.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		063A194974D142FD43DF6E11 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 20FAA431342425F2589E85EA /* CurrentCoach */;
+			targetProxy = 4ED522C30D63E1738E526EC5 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		0503D063EFED55C6C4E8522A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CurrentCoach/Info.plist;
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Current Coach needs background location access to continue measuring tidal current when the app is minimized.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Current Coach uses your location to measure tidal current speed and direction.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = location;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_NAME = CurrentCoach;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		3B390A52C61C299ABB77A5E3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 2;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Current Coach";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.mcbrideracing.current-coach";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		3D0F752F76D5B6854037E8E8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CurrentCoach.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CurrentCoach";
+			};
+			name = Debug;
+		};
+		3D1079AA0421D21CDA50165A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CurrentCoach.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/CurrentCoach";
+			};
+			name = Release;
+		};
+		9A48AEE3DDE4514ACF024CD1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = CurrentCoach/Info.plist;
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Current Coach needs background location access to continue measuring tidal current when the app is minimized.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Current Coach uses your location to measure tidal current speed and direction.";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = location;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_NAME = CurrentCoach;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		FD8AF1B3304F011965AB5D62 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 2;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Current Coach";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.mcbrideracing.current-coach";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		33F536B560A5725AA4AEF13E /* Build configuration list for PBXProject "CurrentCoach" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FD8AF1B3304F011965AB5D62 /* Debug */,
+				3B390A52C61C299ABB77A5E3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B9EB71E4E79DED7A018D4E7C /* Build configuration list for PBXNativeTarget "CurrentCoachTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3D0F752F76D5B6854037E8E8 /* Debug */,
+				3D1079AA0421D21CDA50165A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D7858B7B005753BE50E0DA6A /* Build configuration list for PBXNativeTarget "CurrentCoach" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9A48AEE3DDE4514ACF024CD1 /* Debug */,
+				0503D063EFED55C6C4E8522A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = E25C22A9A51FA36A6BEE064E /* Project object */;
+}

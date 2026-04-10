@@ -1,0 +1,9 @@
+.DS_Store
+*.xcarchive/
+export/
+ExportOptions.plist
+AuthKey_*.p8
+DerivedData/
+build/
+xcuserdata/
+*.xcuserstate
