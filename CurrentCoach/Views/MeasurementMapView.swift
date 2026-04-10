@@ -7,34 +7,58 @@ enum MapDisplayStyle: String, CaseIterable {
     case hybrid = "Hybrid"
 }
 
+enum LookbackPeriod: String, CaseIterable, Identifiable {
+    case tenMin = "10m"
+    case thirtyMin = "30m"
+    case oneHour = "1h"
+    case twoHour = "2h"
+    case fiveHour = "5h"
+
+    var id: String { rawValue }
+
+    var seconds: TimeInterval {
+        switch self {
+        case .tenMin: return 600
+        case .thirtyMin: return 1800
+        case .oneHour: return 3600
+        case .twoHour: return 7200
+        case .fiveHour: return 18000
+        }
+    }
+}
+
 struct MeasurementMapView: View {
     let store: MeasurementStore
     let locationService: LocationService
 
-    @State private var filter: MapTimeFilter = .lastDay
-    @State private var selectedDate: Date = Date()
     @State private var cameraPosition: MapCameraPosition = .automatic
     @State private var mapStyle: MapDisplayStyle = .standard
 
+    // Time scrubber: position in last 24h (0 = now, 86400 = 24h ago)
+    @State private var scrubberSecondsAgo: Double = 0
+    @State private var lookback: LookbackPeriod = .oneHour
+    @State private var showLookbackMenu = false
+
+    private var referenceTime: Date {
+        Date().addingTimeInterval(-scrubberSecondsAgo)
+    }
+
     private var filteredMeasurements: [TideMeasurement] {
-        store.measurements(for: filter, date: selectedDate)
+        let endTime = referenceTime
+        let startTime = endTime.addingTimeInterval(-lookback.seconds)
+        return store.measurements.filter { $0.timestamp >= startTime && $0.timestamp <= endTime }
     }
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .topLeading) {
             NT.bgPrimary.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Map
                 Map(position: $cameraPosition) {
                     UserAnnotation()
 
                     ForEach(filteredMeasurements) { measurement in
-                        Annotation(
-                            "",
-                            coordinate: measurement.coordinate,
-                            anchor: .center
-                        ) {
+                        Annotation("", coordinate: measurement.coordinate, anchor: .center) {
                             CurrentArrowView(measurement: measurement)
                         }
                     }
@@ -56,33 +80,77 @@ struct MeasurementMapView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    // Time filter
-                    HStack(spacing: 0) {
-                        FilterButton(title: "Last Day", isSelected: filter == .lastDay) {
-                            filter = .lastDay
+                    // Time scrubber for last 24h
+                    VStack(spacing: 4) {
+                        HStack {
+                            Text("Now")
+                                .font(.caption2)
+                                .foregroundStyle(NT.textDim)
+                            Spacer()
+                            Text(scrubberLabel)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(NT.accentTeal)
+                            Spacer()
+                            Text("24h ago")
+                                .font(.caption2)
+                                .foregroundStyle(NT.textDim)
                         }
-
-                        FilterButton(title: "Last\nhour", isSelected: filter == .lastHour) {
-                            filter = .lastHour
-                        }
-
-                        DatePicker("", selection: $selectedDate, displayedComponents: .date)
-                            .labelsHidden()
+                        Slider(value: $scrubberSecondsAgo, in: 0...86400, step: 60)
                             .tint(NT.accentTeal)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(filter == .specificDate ? NT.accentAmber : .clear, lineWidth: 1)
-                            )
-                            .onChange(of: selectedDate) {
-                                filter = .specificDate
-                            }
                     }
                 }
                 .padding()
                 .background(NT.bgCard)
             }
+
+            // Lookback period selector (top-left circle)
+            VStack(spacing: 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showLookbackMenu.toggle()
+                    }
+                } label: {
+                    Text(lookback.rawValue)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(NT.accentTeal)
+                        .frame(width: 50, height: 50)
+                        .background(
+                            Circle()
+                                .fill(NT.bgCard.opacity(0.95))
+                                .overlay(Circle().stroke(NT.accentTeal.opacity(0.4), lineWidth: 1.5))
+                        )
+                }
+
+                if showLookbackMenu {
+                    VStack(spacing: 6) {
+                        ForEach(LookbackPeriod.allCases) { period in
+                            Button {
+                                lookback = period
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    showLookbackMenu = false
+                                }
+                            } label: {
+                                Text(period.rawValue)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(period == lookback ? NT.accentAmber : NT.textSecondary)
+                                    .frame(width: 44, height: 32)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(NT.bgCard.opacity(0.95))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(period == lookback ? NT.accentAmber.opacity(0.5) : NT.textDim.opacity(0.3), lineWidth: 1)
+                                            )
+                                    )
+                            }
+                        }
+                    }
+                    .padding(.top, 6)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .padding(.leading, 12)
+            .padding(.top, 12)
         }
         .onChange(of: filteredMeasurements) {
             updateCamera()
@@ -90,6 +158,18 @@ struct MeasurementMapView: View {
         .onAppear {
             updateCamera()
         }
+    }
+
+    private var scrubberLabel: String {
+        if scrubberSecondsAgo < 60 {
+            return "Now • showing last \(lookback.rawValue)"
+        }
+        let mins = Int(scrubberSecondsAgo / 60)
+        if mins < 60 {
+            return "\(mins)m ago • last \(lookback.rawValue)"
+        }
+        let hrs = Double(mins) / 60.0
+        return String(format: "%.1fh ago • last %@", hrs, lookback.rawValue)
     }
 
     private func updateCamera() {
@@ -162,24 +242,6 @@ private struct CurrentArrowView: View {
                             .stroke(NT.accentTeal.opacity(0.3), lineWidth: 1)
                     )
             )
-        }
-    }
-}
-
-// MARK: - Filter Button
-
-private struct FilterButton: View {
-    let title: String
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(isSelected ? NT.accentTeal : NT.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
         }
     }
 }
