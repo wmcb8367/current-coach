@@ -52,6 +52,14 @@ final class MeasureViewModel {
         return String(format: "%.0fm", currentDistance)
     }
 
+    var trackCoordinates: [CLLocationCoordinate2D] {
+        guard isMeasuring,
+              let start = startLocation,
+              let current = locationService.currentLocation
+        else { return [] }
+        return [start.coordinate, current.coordinate]
+    }
+
     func start() {
         guard let location = locationService.currentLocation else { return }
         locationService.enableBackgroundUpdates()

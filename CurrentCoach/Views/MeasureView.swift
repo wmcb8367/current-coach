@@ -1,187 +1,259 @@
 import SwiftUI
 import Charts
+import MapKit
 
 struct MeasureView: View {
     @Bindable var viewModel: MeasureViewModel
+    @Environment(\.horizontalSizeClass) private var hSizeClass
 
     var body: some View {
         ZStack {
             NT.bgPrimary.ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                // Brand header
-                HStack(spacing: 12) {
-                    M2XLogo(height: 26)
-                    Rectangle()
-                        .fill(NT.borderSubtle)
-                        .frame(width: 1, height: 22)
-                    Text("Current Coach")
-                        .eyebrow(NT.textSecondary)
-                    Spacer()
+            Group {
+                if hSizeClass == .regular {
+                    iPadLayout
+                } else {
+                    iPhoneLayout
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 10)
-                .padding(.bottom, 12)
-
-                // Top stats card
-                HStack {
-                    StatLabel(title: "ACC", value: viewModel.locationService.accuracyLabel,
-                              valueColor: accuracyColor)
-                    Spacer()
-                    StatLabel(title: "DIST", value: viewModel.distanceFormatted)
-                    Spacer()
-                    StatLabel(title: "TIME", value: viewModel.elapsedFormatted)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .m2xCard()
-                .padding(.horizontal)
-
-                // Speed unit row
-                HStack(spacing: 0) {
-                    UnitLabel(title: "KTS", value: String(format: "%.2f", viewModel.speedKnots))
-                    Divider().frame(height: 30).overlay(NT.borderSubtle)
-                    ConfidenceLabel(confidence: viewModel.confidence)
-                    Divider().frame(height: 30).overlay(NT.borderSubtle)
-                    UnitLabel(title: "M/S", value: String(format: "%.2f", viewModel.speedMetersPerSecond))
-                }
-                .padding(.vertical, 12)
-                .m2xCard()
-                .padding(.horizontal)
-                .padding(.top, 12)
-
-                Spacer()
-
-                // Big speed display
-                HStack(alignment: .lastTextBaseline, spacing: 0) {
-                    Text(speedWhole)
-                        .font(.system(size: 130, weight: .bold, design: .monospaced))
-                    Text(".")
-                        .font(.system(size: 100, weight: .bold, design: .monospaced))
-                    Text(speedDecimal)
-                        .font(.system(size: 130, weight: .bold, design: .monospaced))
-                    Text(speedHundredths)
-                        .font(.system(size: 130, weight: .bold, design: .monospaced))
-                }
-                .foregroundStyle(NT.textPrimary)
-                .shadow(color: NT.accentTeal.opacity(0.35), radius: 24)
-                .minimumScaleFactor(0.5)
-                .lineLimit(1)
-
-                Text("m/min")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(NT.accentTeal)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.trailing, 32)
-
-                Spacer()
-
-                // Direction display
-                HStack(alignment: .lastTextBaseline) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Image(systemName: "safari")
-                            .font(.title3)
-                            .foregroundStyle(NT.accentTeal)
-                            .rotationEffect(.degrees(viewModel.currentDirection))
-                        Text("From")
-                            .eyebrow(NT.accentTealSoft)
-                    }
-                    Spacer()
-                    Text(String(format: "%.0f", viewModel.currentDirection))
-                        .font(.system(size: 120, weight: .bold, design: .monospaced))
-                        .foregroundStyle(NT.textPrimary)
-                    Text("°")
-                        .font(.system(size: 50, weight: .bold, design: .monospaced))
-                        .foregroundStyle(NT.textPrimary)
-                        .offset(y: -40)
-                }
-                .padding(.horizontal)
-                .minimumScaleFactor(0.5)
-
-                Spacer()
-
-                // Bottom: GPS scope / sparkline + start/stop
-                HStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(viewModel.isMeasuring ? "Last 10s" : "GPS Signal")
-                            .eyebrow()
-                        if viewModel.isMeasuring, !viewModel.recentSpeeds.isEmpty {
-                            Chart {
-                                ForEach(Array(viewModel.recentSpeeds.enumerated()), id: \.offset) { index, speed in
-                                    AreaMark(
-                                        x: .value("Time", index),
-                                        y: .value("Speed", speed)
-                                    )
-                                    .foregroundStyle(NT.accentTeal.opacity(0.15))
-
-                                    LineMark(
-                                        x: .value("Time", index),
-                                        y: .value("Speed", speed)
-                                    )
-                                    .foregroundStyle(NT.accentTeal)
-                                }
-                            }
-                            .chartXAxis(.hidden)
-                            .chartYAxis(.hidden)
-                            .frame(height: 50)
-                        } else {
-                            GPSSignalScope(
-                                accuracyMeters: viewModel.locationService.currentLocation?.horizontalAccuracy,
-                                isAuthorized: viewModel.locationService.isAuthorized
-                            )
-                            .frame(height: 50)
-                        }
-                    }
-                    .padding(14)
-                    .m2xCard()
-                    .frame(maxWidth: 150)
-
-                    // Start/Stop button
-                    Button(action: {
-                        if viewModel.isMeasuring {
-                            viewModel.stop()
-                        } else {
-                            viewModel.start()
-                        }
-                    }) {
-                        VStack(spacing: 4) {
-                            Text(viewModel.isMeasuring ? "Stop" : "Start")
-                                .font(.system(size: 40, weight: .bold))
-                            Text(viewModel.isMeasuring ? "Recording…" : viewModel.statusLabel)
-                                .font(.subheadline)
-                        }
-                        .foregroundStyle(viewModel.isMeasuring ? .white : NT.bgPrimary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 100)
-                        .background(
-                            RoundedRectangle(cornerRadius: NT.cardRadius, style: .continuous)
-                                .fill(viewModel.isMeasuring ? NT.stopGradient : NT.startGradient)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: NT.cardRadius, style: .continuous)
-                                .strokeBorder(
-                                    viewModel.isMeasuring ? NT.accentCoral.opacity(0.5) : NT.accentTeal.opacity(0.5),
-                                    lineWidth: 1
-                                )
-                        )
-                    }
-                    .disabled(!viewModel.isMeasuring && !viewModel.isGPSReady)
-                    .opacity(!viewModel.isMeasuring && !viewModel.isGPSReady ? 0.4 : 1.0)
-                }
-                .padding(.horizontal)
-
-                // Version footer
-                Text("v1.1.0 · M2X")
-                    .font(.caption)
-                    .foregroundStyle(NT.textFaint)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
             }
         }
         .onAppear {
             viewModel.locationService.requestAuthorization()
             viewModel.locationService.startUpdating()
         }
+    }
+
+    // MARK: - iPhone (single column, stacked)
+
+    private var iPhoneLayout: some View {
+        VStack(spacing: 0) {
+            headerBar
+            statsCard
+            speedUnitRow
+            Spacer()
+            bigSpeedDisplay
+            speedUnitTrailing
+            Spacer()
+            directionDisplay
+            Spacer()
+            bottomControls
+            versionFooter
+        }
+    }
+
+    // MARK: - iPad (two column: readouts + live map)
+
+    private var iPadLayout: some View {
+        VStack(spacing: 0) {
+            headerBar
+            HStack(alignment: .top, spacing: 20) {
+                VStack(spacing: 0) {
+                    statsCard
+                    speedUnitRow
+                    Spacer(minLength: 24)
+                    bigSpeedDisplay
+                    speedUnitTrailing
+                    Spacer(minLength: 24)
+                    directionDisplay
+                    Spacer(minLength: 16)
+                    bottomControls
+                }
+                .frame(maxWidth: 520)
+
+                livePreviewPanel
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
+            versionFooter
+        }
+    }
+
+    // MARK: - Shared pieces
+
+    private var headerBar: some View {
+        HStack(spacing: 12) {
+            M2XLogo(height: 26)
+            Rectangle()
+                .fill(NT.borderSubtle)
+                .frame(width: 1, height: 22)
+            Text("Current Coach")
+                .eyebrow(NT.textSecondary)
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+    }
+
+    private var statsCard: some View {
+        HStack {
+            StatLabel(title: "ACC", value: viewModel.locationService.accuracyLabel,
+                      valueColor: accuracyColor)
+            Spacer()
+            StatLabel(title: "DIST", value: viewModel.distanceFormatted)
+            Spacer()
+            StatLabel(title: "TIME", value: viewModel.elapsedFormatted)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .m2xCard()
+        .padding(.horizontal)
+    }
+
+    private var speedUnitRow: some View {
+        HStack(spacing: 0) {
+            UnitLabel(title: "KTS", value: String(format: "%.2f", viewModel.speedKnots))
+            Divider().frame(height: 30).overlay(NT.borderSubtle)
+            ConfidenceLabel(confidence: viewModel.confidence)
+            Divider().frame(height: 30).overlay(NT.borderSubtle)
+            UnitLabel(title: "M/S", value: String(format: "%.2f", viewModel.speedMetersPerSecond))
+        }
+        .padding(.vertical, 12)
+        .m2xCard()
+        .padding(.horizontal)
+        .padding(.top, 12)
+    }
+
+    private var bigSpeedDisplay: some View {
+        HStack(alignment: .lastTextBaseline, spacing: 0) {
+            Text(speedWhole)
+                .font(.system(size: 130, weight: .bold, design: .monospaced))
+            Text(".")
+                .font(.system(size: 100, weight: .bold, design: .monospaced))
+            Text(speedDecimal)
+                .font(.system(size: 130, weight: .bold, design: .monospaced))
+            Text(speedHundredths)
+                .font(.system(size: 130, weight: .bold, design: .monospaced))
+        }
+        .foregroundStyle(NT.textPrimary)
+        .shadow(color: NT.accentTeal.opacity(0.35), radius: 24)
+        .minimumScaleFactor(0.5)
+        .lineLimit(1)
+    }
+
+    private var speedUnitTrailing: some View {
+        Text("m/min")
+            .font(.system(size: 22, weight: .semibold))
+            .foregroundStyle(NT.accentTeal)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.trailing, 32)
+    }
+
+    private var directionDisplay: some View {
+        HStack(alignment: .lastTextBaseline) {
+            VStack(alignment: .leading, spacing: 6) {
+                Image(systemName: "safari")
+                    .font(.title3)
+                    .foregroundStyle(NT.accentTeal)
+                    .rotationEffect(.degrees(viewModel.currentDirection))
+                Text("From")
+                    .eyebrow(NT.accentTealSoft)
+            }
+            Spacer()
+            Text(String(format: "%.0f", viewModel.currentDirection))
+                .font(.system(size: 120, weight: .bold, design: .monospaced))
+                .foregroundStyle(NT.textPrimary)
+            Text("°")
+                .font(.system(size: 50, weight: .bold, design: .monospaced))
+                .foregroundStyle(NT.textPrimary)
+                .offset(y: -40)
+        }
+        .padding(.horizontal)
+        .minimumScaleFactor(0.5)
+    }
+
+    private var bottomControls: some View {
+        HStack(spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(viewModel.isMeasuring ? "Last 10s" : "GPS Signal")
+                    .eyebrow()
+                if viewModel.isMeasuring, !viewModel.recentSpeeds.isEmpty {
+                    Chart {
+                        ForEach(Array(viewModel.recentSpeeds.enumerated()), id: \.offset) { index, speed in
+                            AreaMark(
+                                x: .value("Time", index),
+                                y: .value("Speed", speed)
+                            )
+                            .foregroundStyle(NT.accentTeal.opacity(0.15))
+
+                            LineMark(
+                                x: .value("Time", index),
+                                y: .value("Speed", speed)
+                            )
+                            .foregroundStyle(NT.accentTeal)
+                        }
+                    }
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    .frame(height: 50)
+                } else {
+                    GPSSignalScope(
+                        accuracyMeters: viewModel.locationService.currentLocation?.horizontalAccuracy,
+                        isAuthorized: viewModel.locationService.isAuthorized
+                    )
+                    .frame(height: 50)
+                }
+            }
+            .padding(14)
+            .m2xCard()
+            .frame(maxWidth: 150)
+
+            Button(action: {
+                if viewModel.isMeasuring {
+                    viewModel.stop()
+                } else {
+                    viewModel.start()
+                }
+            }) {
+                VStack(spacing: 4) {
+                    Text(viewModel.isMeasuring ? "Stop" : "Start")
+                        .font(.system(size: 40, weight: .bold))
+                    Text(viewModel.isMeasuring ? "Recording…" : viewModel.statusLabel)
+                        .font(.subheadline)
+                }
+                .foregroundStyle(viewModel.isMeasuring ? .white : NT.bgPrimary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 100)
+                .background(
+                    RoundedRectangle(cornerRadius: NT.cardRadius, style: .continuous)
+                        .fill(viewModel.isMeasuring ? NT.stopGradient : NT.startGradient)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: NT.cardRadius, style: .continuous)
+                        .strokeBorder(
+                            viewModel.isMeasuring ? NT.accentCoral.opacity(0.5) : NT.accentTeal.opacity(0.5),
+                            lineWidth: 1
+                        )
+                )
+            }
+            .disabled(!viewModel.isMeasuring && !viewModel.isGPSReady)
+            .opacity(!viewModel.isMeasuring && !viewModel.isGPSReady ? 0.4 : 1.0)
+        }
+        .padding(.horizontal)
+    }
+
+    private var versionFooter: some View {
+        Text("v1.2.0 · M2X")
+            .font(.caption)
+            .foregroundStyle(NT.textFaint)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+    }
+
+    // MARK: - iPad live preview
+
+    private var livePreviewPanel: some View {
+        LivePreviewMap(
+            location: viewModel.locationService.currentLocation,
+            track: viewModel.trackCoordinates
+        )
+        .clipShape(RoundedRectangle(cornerRadius: NT.cardRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: NT.cardRadius, style: .continuous)
+                .strokeBorder(NT.borderSubtle, lineWidth: 1)
+        )
+        .padding(.top, 4)
     }
 
     // MARK: - Speed Formatting
@@ -205,6 +277,36 @@ struct MeasureView: View {
         case "Fair": return NT.gpsFair
         default: return NT.gpsPoor
         }
+    }
+}
+
+// MARK: - Live preview map (iPad only)
+
+private struct LivePreviewMap: View {
+    let location: CLLocation?
+    let track: [CLLocationCoordinate2D]
+
+    @State private var camera: MapCameraPosition = .automatic
+
+    var body: some View {
+        Map(position: $camera) {
+            UserAnnotation()
+            if track.count >= 2 {
+                MapPolyline(coordinates: track)
+                    .stroke(NT.accentTeal, lineWidth: 3)
+            }
+        }
+        .mapStyle(.standard(elevation: .flat, emphasis: .muted))
+        .onAppear { recenter() }
+        .onChange(of: location?.coordinate.latitude) { _, _ in recenter() }
+    }
+
+    private func recenter() {
+        guard let c = location?.coordinate else { return }
+        camera = .region(MKCoordinateRegion(
+            center: c,
+            span: MKCoordinateSpan(latitudeDelta: 0.002, longitudeDelta: 0.002)
+        ))
     }
 }
 
@@ -251,7 +353,6 @@ private struct GPSSignalScope: View {
                 let maxRadius = min(size.width, size.height) / 2 - 2
                 let now = context.date.timeIntervalSinceReferenceDate
 
-                // Animated sweep rings. Period (seconds) + intensity scale with signal.
                 let period = pulsePeriod
                 let ringCount = 3
                 for i in 0..<ringCount {
@@ -262,7 +363,6 @@ private struct GPSSignalScope: View {
                     ctx.stroke(path, with: .color(ringColor.opacity(alpha * 0.6)), lineWidth: 1.5)
                 }
 
-                // Center dot.
                 let dotRadius: CGFloat = 3
                 let dot = Path(ellipseIn: CGRect(x: center.x - dotRadius, y: center.y - dotRadius, width: dotRadius * 2, height: dotRadius * 2))
                 ctx.fill(dot, with: .color(ringColor))
