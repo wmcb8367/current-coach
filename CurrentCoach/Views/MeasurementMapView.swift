@@ -30,9 +30,14 @@ enum LookbackPeriod: String, CaseIterable, Identifiable {
 struct MeasurementMapView: View {
     let store: MeasurementStore
     let locationService: LocationService
+    @Binding var focus: MapFocus?
 
     @State private var cameraPosition: MapCameraPosition = .automatic
-    @State private var mapStyle: MapDisplayStyle = .standard
+    @State private var mapStyle: MapDisplayStyle = {
+        // Screenshot/dev hook: CC_DEFAULT_MAP_STYLE=charts|satellite|standard
+        let raw = ProcessInfo.processInfo.environment["CC_DEFAULT_MAP_STYLE"] ?? ""
+        return MapDisplayStyle(rawValue: raw.capitalized) ?? .standard
+    }()
     @State private var nauticalRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 39.5, longitude: 2.7),
         span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
@@ -43,14 +48,29 @@ struct MeasurementMapView: View {
     @State private var lookback: LookbackPeriod = .oneHour
     @State private var showLookbackMenu = false
 
+    @State private var showHeatMap: Bool = false
+    @State private var heatMapLookbackHours: Double = 3
+
     private var referenceTime: Date {
         Date().addingTimeInterval(-scrubberSecondsAgo)
     }
 
     private var filteredMeasurements: [TideMeasurement] {
+        if let focus {
+            return store.measurements.filter { $0.timestamp >= focus.startTime && $0.timestamp <= focus.endTime }
+        }
+        if showHeatMap {
+            let cutoff = Date().addingTimeInterval(-heatMapLookbackHours * 3600)
+            return store.measurements.filter { $0.timestamp >= cutoff }
+        }
         let endTime = referenceTime
         let startTime = endTime.addingTimeInterval(-lookback.seconds)
         return store.measurements.filter { $0.timestamp >= startTime && $0.timestamp <= endTime }
+    }
+
+    private var vectorField: VectorFieldResult? {
+        guard showHeatMap else { return nil }
+        return VectorFieldInterpolator.compute(measurements: filteredMeasurements)
     }
 
     var body: some View {
@@ -67,6 +87,15 @@ struct MeasurementMapView: View {
                 } else {
                     Map(position: $cameraPosition) {
                         UserAnnotation()
+
+                        if let field = vectorField {
+                            ForEach(field.samples) { sample in
+                                Annotation("", coordinate: CLLocationCoordinate2D(latitude: sample.latitude, longitude: sample.longitude), anchor: .center) {
+                                    FieldArrowView(sample: sample)
+                                }
+                                .annotationTitles(.hidden)
+                            }
+                        }
 
                         ForEach(filteredMeasurements) { measurement in
                             Annotation("", coordinate: measurement.coordinate, anchor: .center) {
@@ -92,44 +121,84 @@ struct MeasurementMapView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    // Time scrubber for last 24h
-                    VStack(spacing: 4) {
-                        HStack {
-                            Text("Now")
-                                .font(.caption2)
-                                .foregroundStyle(NT.textDim)
-                            Spacer()
-                            Text(scrubberLabel)
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(NT.accentTeal)
-                            Spacer()
-                            Text("24h ago")
-                                .font(.caption2)
-                                .foregroundStyle(NT.textDim)
+                    if let focus {
+                        focusBanner(for: focus)
+                    } else if showHeatMap {
+                        VStack(spacing: 4) {
+                            HStack {
+                                Text("1h")
+                                    .font(.caption2)
+                                    .foregroundStyle(NT.textDim)
+                                Spacer()
+                                Text(heatMapLookbackLabel)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(NT.accentTealSoft)
+                                Spacer()
+                                Text("24h")
+                                    .font(.caption2)
+                                    .foregroundStyle(NT.textDim)
+                            }
+                            Slider(value: $heatMapLookbackHours, in: 1...24, step: 0.5)
+                                .tint(NT.accentTealSoft)
                         }
-                        Slider(value: $scrubberSecondsAgo, in: 0...86400, step: 60)
-                            .tint(NT.accentTeal)
+                    } else {
+                        VStack(spacing: 4) {
+                            HStack {
+                                Text("Now")
+                                    .font(.caption2)
+                                    .foregroundStyle(NT.textDim)
+                                Spacer()
+                                Text(scrubberLabel)
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(NT.accentTeal)
+                                Spacer()
+                                Text("24h ago")
+                                    .font(.caption2)
+                                    .foregroundStyle(NT.textDim)
+                            }
+                            Slider(value: $scrubberSecondsAgo, in: 0...86400, step: 60)
+                                .tint(NT.accentTeal)
+                        }
                     }
                 }
                 .padding()
                 .background(NT.bgCard)
             }
 
-            // Lookback period selector (top-left circle)
-            VStack(spacing: 0) {
+            // Top-left column: lookback selector (when applicable) + heat map toggle
+            VStack(spacing: 10) {
+                if !showHeatMap && focus == nil {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showLookbackMenu.toggle()
+                        }
+                    } label: {
+                        Text(lookback.rawValue)
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(NT.accentTeal)
+                            .frame(width: 50, height: 50)
+                            .background(
+                                Circle()
+                                    .fill(NT.bgCard.opacity(0.95))
+                                    .overlay(Circle().stroke(NT.accentTeal.opacity(0.4), lineWidth: 1.5))
+                            )
+                    }
+                }
+
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        showLookbackMenu.toggle()
+                        if !showHeatMap && focus != nil { focus = nil }
+                        showHeatMap.toggle()
                     }
                 } label: {
-                    Text(lookback.rawValue)
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(NT.accentTeal)
+                    Image(systemName: showHeatMap ? "square.grid.3x3.fill" : "square.grid.3x3")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(showHeatMap ? NT.bgPrimary : NT.accentTealSoft)
                         .frame(width: 50, height: 50)
                         .background(
                             Circle()
-                                .fill(NT.bgCard.opacity(0.95))
-                                .overlay(Circle().stroke(NT.accentTeal.opacity(0.4), lineWidth: 1.5))
+                                .fill(showHeatMap ? NT.accentTealSoft : NT.bgCard.opacity(0.95))
+                                .overlay(Circle().stroke(NT.accentTealSoft.opacity(0.4), lineWidth: 1.5))
                         )
                 }
 
@@ -164,18 +233,67 @@ struct MeasurementMapView: View {
             .padding(.leading, 12)
             .padding(.top, 12)
         }
-        .onChange(of: filteredMeasurements) {
-            updateCamera()
-        }
         .onChange(of: mapStyle) {
             if mapStyle == .charts {
                 syncToNauticalRegion()
             }
         }
+        .onChange(of: focus) { _, newFocus in
+            if newFocus != nil {
+                // Suppress free-form scrubber while focused.
+                scrubberSecondsAgo = 0
+                showLookbackMenu = false
+                showHeatMap = false
+            }
+            updateCamera()
+            if mapStyle == .charts { syncToNauticalRegion() }
+        }
+        .onChange(of: showHeatMap) { _, _ in
+            updateCamera()
+            if mapStyle == .charts { syncToNauticalRegion() }
+        }
         .onAppear {
             updateCamera()
+            if mapStyle == .charts {
+                syncToNauticalRegion()
+            }
         }
     }
+
+    @ViewBuilder
+    private func focusBanner(for focus: MapFocus) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "scope")
+                .foregroundStyle(NT.accentTealSoft)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Focused on measurement")
+                    .eyebrow(NT.accentTealSoft)
+                Text(Self.focusDateFormatter.string(from: focus.timestamp))
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(NT.textPrimary)
+                Text("±12h window")
+                    .font(.caption)
+                    .foregroundStyle(NT.textDim)
+            }
+            Spacer()
+            Button {
+                self.focus = nil
+            } label: {
+                Text("Live")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(NT.bgPrimary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color.white))
+            }
+        }
+    }
+
+    private static let focusDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d, HH:mm"
+        return f
+    }()
 
     private var scrubberLabel: String {
         if scrubberSecondsAgo < 60 {
@@ -187,6 +305,18 @@ struct MeasurementMapView: View {
         }
         let hrs = Double(mins) / 60.0
         return String(format: "%.1fh ago • last %@", hrs, lookback.rawValue)
+    }
+
+    private var heatMapLookbackLabel: String {
+        let hours = heatMapLookbackHours
+        let pointCount = filteredMeasurements.filter(\.isValid).count
+        let durationLabel: String = {
+            if hours >= 1 && hours.truncatingRemainder(dividingBy: 1) == 0 {
+                return String(format: "last %.0fh", hours)
+            }
+            return String(format: "last %.1fh", hours)
+        }()
+        return "Vector field • \(durationLabel) • \(pointCount) pts"
     }
 
     private func syncToNauticalRegion() {
@@ -204,17 +334,39 @@ struct MeasurementMapView: View {
     }
 
     private func updateCamera() {
-        let measurements = filteredMeasurements
-        if measurements.isEmpty {
-            if let loc = locationService.currentLocation {
-                cameraPosition = .region(MKCoordinateRegion(
-                    center: loc.coordinate,
-                    span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-                ))
-            }
+        let region: MKCoordinateRegion
+        if showHeatMap, let field = vectorField {
+            region = regionForField(field)
+        } else if !filteredMeasurements.isEmpty {
+            region = regionForMeasurements(filteredMeasurements)
+        } else if let loc = locationService.currentLocation {
+            region = MKCoordinateRegion(
+                center: loc.coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+            )
+        } else {
             return
         }
-        cameraPosition = .region(regionForMeasurements(measurements))
+        nauticalRegion = region
+        // Apple's top-down MapCamera shows ~2× the distance value in meters
+        // vertically on a portrait phone. Heat-map mode frames the padded
+        // field bbox (loose fit looks right); the list/scrubber views frame
+        // just the measurements — zoom in tighter so individual arrows stand
+        // out on the course.
+        let latMeters = region.span.latitudeDelta * 111_320.0
+        let lonMeters = region.span.longitudeDelta * 111_320.0 * cos(region.center.latitude * .pi / 180.0)
+        let multiplier = showHeatMap ? 0.55 : 0.22
+        let floor: Double = showHeatMap ? 200 : 80
+        let distance = max(floor, max(lonMeters, latMeters) * multiplier)
+        let camera = MapCamera(
+            centerCoordinate: region.center,
+            distance: distance,
+            heading: 0,
+            pitch: 0
+        )
+        withAnimation(.easeInOut(duration: 0.35)) {
+            cameraPosition = .camera(camera)
+        }
     }
 
     private func regionForMeasurements(_ measurements: [TideMeasurement]) -> MKCoordinateRegion {
@@ -226,7 +378,23 @@ struct MeasurementMapView: View {
         }
         return MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2),
-            span: MKCoordinateSpan(latitudeDelta: max(0.01, (maxLat - minLat) * 1.5), longitudeDelta: max(0.01, (maxLon - minLon) * 1.5))
+            span: MKCoordinateSpan(
+                latitudeDelta: max(0.008, (maxLat - minLat) * 1.8),
+                longitudeDelta: max(0.008, (maxLon - minLon) * 1.8)
+            )
+        )
+    }
+
+    private func regionForField(_ field: VectorFieldResult) -> MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(
+                latitude: (field.minLat + field.maxLat) / 2,
+                longitude: (field.minLon + field.maxLon) / 2
+            ),
+            span: MKCoordinateSpan(
+                latitudeDelta: max(0.003, field.maxLat - field.minLat),
+                longitudeDelta: max(0.003, field.maxLon - field.minLon)
+            )
         )
     }
 }
@@ -250,6 +418,7 @@ private struct CurrentArrowView: View {
                 .fontWeight(.bold)
                 .foregroundStyle(arrowColor)
                 .rotationEffect(.degrees(measurement.flowDirection))
+                .shadow(color: .black.opacity(0.55), radius: 3, y: 1)
 
             VStack(alignment: .leading, spacing: 0) {
                 Text(measurement.timeFormatted)
@@ -266,12 +435,33 @@ private struct CurrentArrowView: View {
             .padding(4)
             .background(
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(NT.bgCard.opacity(0.9))
+                    .fill(NT.bgPrimary)
                     .overlay(
                         RoundedRectangle(cornerRadius: 4)
-                            .stroke(NT.accentTeal.opacity(0.3), lineWidth: 1)
+                            .stroke(arrowColor.opacity(0.6), lineWidth: 1)
                     )
             )
+            .shadow(color: .black.opacity(0.55), radius: 4, y: 2)
         }
+    }
+}
+
+// MARK: - Vector Field Arrow (heat map mode)
+
+private struct FieldArrowView: View {
+    let sample: VectorFieldSample
+
+    private var color: Color {
+        let speed = sample.speedMetersPerMinute
+        if speed < 3 { return NT.accentTealSoft }
+        if speed < 6 { return NT.accentAmber }
+        return NT.accentCoral
+    }
+
+    var body: some View {
+        Image(systemName: "arrow.up")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(color.opacity(0.25 + 0.45 * sample.confidence))
+            .rotationEffect(.degrees(sample.flowDirectionDegrees))
     }
 }

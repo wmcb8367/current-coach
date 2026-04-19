@@ -30,6 +30,14 @@ final class MeasurementStore {
         save()
     }
 
+    func markSynced(ids: Set<UUID>, at date: Date) {
+        guard !ids.isEmpty else { return }
+        for index in measurements.indices where ids.contains(measurements[index].id) {
+            measurements[index].syncedAt = date
+        }
+        save()
+    }
+
     /// Measurements grouped by date, sorted newest first
     var groupedByDate: [(date: String, measurements: [TideMeasurement])] {
         let formatter = DateFormatter()

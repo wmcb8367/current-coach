@@ -15,10 +15,11 @@ final class MeasureViewModel {
     var recentSpeeds: [Double] = []
     var confidence: Double = 0
 
-    private var locations: [CLLocation] = []
+    private var startLocation: CLLocation?
     private var startTime: Date?
     private var timer: Timer?
     private var accuracyReadings: [Double] = []
+    private var startAccuracy: Double = -1
 
     init(locationService: LocationService, store: MeasurementStore) {
         self.locationService = locationService
@@ -56,14 +57,15 @@ final class MeasureViewModel {
         locationService.enableBackgroundUpdates()
         isMeasuring = true
         startTime = Date()
-        locations = [location]
+        startLocation = location
+        startAccuracy = location.horizontalAccuracy >= 0 ? location.horizontalAccuracy : 30
         currentDistance = 0
         elapsedTime = 0
         currentSpeed = 0
         currentDirection = 0
         recentSpeeds = []
         confidence = 0
-        accuracyReadings = []
+        accuracyReadings = [startAccuracy]
 
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -82,46 +84,53 @@ final class MeasureViewModel {
         let duration = Date().timeIntervalSince(startTime)
         let isValid = currentDistance > 1 && duration > 3
 
-        let startLocation = locations.first ?? locationService.currentLocation
+        let endAccuracyRaw = locationService.currentLocation?.horizontalAccuracy ?? -1
+        let endAccuracy = endAccuracyRaw >= 0 ? endAccuracyRaw : (accuracyReadings.last ?? 30)
+
+        let finalConfidence = Self.computeFinalConfidence(
+            elapsedTime: duration,
+            accuracyReadings: accuracyReadings,
+            startAccuracy: startAccuracy,
+            endAccuracy: endAccuracy,
+            finalDistance: currentDistance
+        )
+
+        let anchor = startLocation ?? locationService.currentLocation
         let measurement = TideMeasurement(
             id: UUID(),
             timestamp: startTime,
             duration: duration,
             speedMetersPerMinute: currentSpeed,
             fromDirection: currentDirection,
-            latitude: startLocation?.coordinate.latitude ?? 0,
-            longitude: startLocation?.coordinate.longitude ?? 0,
-            isValid: isValid
+            latitude: anchor?.coordinate.latitude ?? 0,
+            longitude: anchor?.coordinate.longitude ?? 0,
+            isValid: isValid,
+            confidence: finalConfidence
         )
 
         store.add(measurement)
         self.startTime = nil
+        self.startLocation = nil
     }
 
     private func update() {
         guard let startTime,
+              let startLocation,
               let currentLocation = locationService.currentLocation else { return }
 
-        locations.append(currentLocation)
+        // Displacement from the first ping to the current location.
+        // Not aggregate path length — if the user returns to the start, this goes to zero.
+        currentDistance = currentLocation.distance(from: startLocation)
 
-        // Total distance along GPS track
-        var totalDistance: Double = 0
-        for i in 1..<locations.count {
-            totalDistance += locations[i].distance(from: locations[i - 1])
-        }
-        currentDistance = totalDistance
-
-        // Elapsed time
         elapsedTime = Date().timeIntervalSince(startTime)
 
-        // Speed in m/min
         if elapsedTime > 0 {
             currentSpeed = (currentDistance / elapsedTime) * 60.0
         }
 
-        // Bearing: flow direction from first to last location
-        if let first = locations.first, currentLocation.distance(from: first) > 1 {
-            let flowBearing = Self.bearing(from: first, to: currentLocation)
+        // Bearing: flow direction from first to current location
+        if currentDistance > 1 {
+            let flowBearing = Self.bearing(from: startLocation, to: currentLocation)
             currentDirection = Self.normalizeAngle(flowBearing + 180.0)
         }
 
@@ -131,56 +140,83 @@ final class MeasureViewModel {
             recentSpeeds.removeFirst()
         }
 
-        // Confidence calculation
+        // Confidence calculation — live score reflects only time + GPS quality.
+        // Boat motion during the recording is independent of drifter motion, so we
+        // can't know the true start→end displacement until Stop is pressed.
         let acc = currentLocation.horizontalAccuracy
         if acc >= 0 { accuracyReadings.append(acc) }
-        confidence = Self.computeConfidence(
+        confidence = Self.computeLiveConfidence(
             elapsedTime: elapsedTime,
-            accuracyReadings: accuracyReadings,
-            recentSpeeds: recentSpeeds,
-            distance: currentDistance
+            accuracyReadings: accuracyReadings
         )
     }
 
-    /// Confidence 0-100 based on time, GPS accuracy, and measurement stability.
-    /// More data dilutes GPS noise → higher confidence.
-    static func computeConfidence(
+    /// Pessimistic GPS accuracy in meters: mean of the worst third of readings.
+    /// A single bad ping should still count, so we don't use the plain mean.
+    static func pessimisticAccuracy(_ readings: [Double]) -> Double {
+        let valid = readings.filter { $0 >= 0 }
+        guard !valid.isEmpty else { return 30 }
+        let sorted = valid.sorted()
+        let tailStart = (sorted.count * 2) / 3
+        let tail = sorted[tailStart..<sorted.count]
+        return tail.reduce(0, +) / Double(tail.count)
+    }
+
+    /// 0-100 factor: 1.0 at ≤2m, ~0.5 at 10m, ~0 at ≥30m.
+    static func accuracyFactor(meters: Double) -> Double {
+        max(0, 1.0 - pow(meters / 25.0, 1.5))
+    }
+
+    /// 0-100 factor: asymptotic ramp, 24% at 10s, 55% at 30s, 78% at 60s, 95% at 120s.
+    /// Captures how many independent GPS samples have been integrated.
+    static func timeFactor(seconds: TimeInterval) -> Double {
+        1.0 - exp(-seconds / 50.0)
+    }
+
+    /// Signal-to-noise factor: how large is the drifter's displacement vs. GPS noise?
+    /// Need ≥ 2× GPS accuracy for half credit; 4× for full credit; floored at 5m so
+    /// a pristine 1m-accuracy drift still needs meaningful motion to count.
+    static func snrFactor(distance: Double, accuracy: Double) -> Double {
+        let noiseFloor = max(5.0, 2.0 * accuracy)
+        return max(0, min(1.0, (distance - noiseFloor) / (2.0 * noiseFloor)))
+    }
+
+    /// Live 0-100 confidence shown during recording. Only time and GPS quality —
+    /// distance is intentionally excluded because boat motion is independent of
+    /// the drifter and the true start→end displacement isn't known until Stop.
+    static func computeLiveConfidence(
+        elapsedTime: TimeInterval,
+        accuracyReadings: [Double]
+    ) -> Double {
+        let t = timeFactor(seconds: elapsedTime)
+        let a = accuracyFactor(meters: pessimisticAccuracy(accuracyReadings))
+        // Weight time and accuracy roughly equally; both must be decent for a
+        // high live score. Geometric mean penalizes either being weak.
+        let combined = sqrt(t * a)
+        return min(100, max(0, combined * 100))
+    }
+
+    /// Final 0-100 confidence computed at Stop, using the actual start→end
+    /// displacement that the tidal-current speed/direction were derived from.
+    /// Displacement uncertainty is dominated by the worst endpoint, so the SNR
+    /// denominator uses max(startAccuracy, endAccuracy). A separate start-ping
+    /// factor throttles the whole score when the anchor ping was weak — the
+    /// entire measurement pivots on that first fix.
+    static func computeFinalConfidence(
         elapsedTime: TimeInterval,
         accuracyReadings: [Double],
-        recentSpeeds: [Double],
-        distance: Double
+        startAccuracy: Double,
+        endAccuracy: Double,
+        finalDistance: Double
     ) -> Double {
-        // Time factor: ramps from 0 → 100% over 120 seconds (asymptotic)
-        // At 10s: 24%, 30s: 53%, 60s: 78%, 120s: 95%
-        let timeFactor = 1.0 - exp(-elapsedTime / 50.0)
-
-        // Accuracy factor: average GPS accuracy → confidence
-        // <2m: 100%, 5m: 85%, 10m: 60%, 20m: 20%, >30m: 0%
-        let avgAccuracy: Double
-        if accuracyReadings.isEmpty {
-            avgAccuracy = 30
-        } else {
-            avgAccuracy = accuracyReadings.reduce(0, +) / Double(accuracyReadings.count)
-        }
-        let accuracyFactor = max(0, 1.0 - pow(avgAccuracy / 25.0, 1.5))
-
-        // Stability factor: low variance in recent speeds = higher confidence
-        let stabilityFactor: Double
-        if recentSpeeds.count >= 3 {
-            let mean = recentSpeeds.reduce(0, +) / Double(recentSpeeds.count)
-            let variance = recentSpeeds.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(recentSpeeds.count)
-            let cv = mean > 0.1 ? sqrt(variance) / mean : 1.0
-            stabilityFactor = max(0, 1.0 - min(cv, 1.0))
-        } else {
-            stabilityFactor = 0.2
-        }
-
-        // Distance factor: need meaningful displacement vs GPS noise floor
-        let distanceFactor = min(1.0, distance / 10.0)
-
-        // Weighted combination
-        let raw = timeFactor * 0.35 + accuracyFactor * 0.30 + stabilityFactor * 0.20 + distanceFactor * 0.15
-        return min(100, max(0, raw * 100))
+        let t = timeFactor(seconds: elapsedTime)
+        let aOverall = accuracyFactor(meters: pessimisticAccuracy(accuracyReadings))
+        let endpointNoise = max(startAccuracy, endAccuracy)
+        let s = snrFactor(distance: finalDistance, accuracy: endpointNoise)
+        let startFactor = accuracyFactor(meters: startAccuracy)
+        // Geometric mean of all four — any weak link drags the score.
+        let combined = pow(t * aOverall * s * startFactor, 1.0 / 4.0)
+        return min(100, max(0, combined * 100))
     }
 
     // MARK: - Geodesy

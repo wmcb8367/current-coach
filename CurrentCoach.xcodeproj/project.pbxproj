@@ -9,18 +9,25 @@
 /* Begin PBXBuildFile section */
 		06314CC530BEFB18DB10386E /* TideMeasurementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC159BA3FCB412B202AE28EF /* TideMeasurementTests.swift */; };
 		0AEA43638EE795F06897A36C /* MeasureViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E7149408E4F54B5AC7E49BF /* MeasureViewModel.swift */; };
+		0BEB5F0D54465A1BC21F27E4 /* SyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20C496CAC111AB3D4B1FD75E /* SyncService.swift */; };
 		1377825AE4C5C8482FAA85E7 /* NauticalTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 967B38C72E194D1533A2A75B /* NauticalTheme.swift */; };
 		15A6268DFC0CFC8159216F90 /* MeasurementMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3850EEA567A8DCBF11BF92F /* MeasurementMapView.swift */; };
 		2DF542861B63DBFE2BCEA7A0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3B704AEF21D198A2F386D453 /* Assets.xcassets */; };
 		34F423158FC54539B2B3AED1 /* MeasureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B08FB035FBD6A006DA3F59F9 /* MeasureView.swift */; };
 		43DBAB1DF40759936B0B26CA /* NauticalMapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D2DCFA1DC43AAA1EB8D1FB1 /* NauticalMapView.swift */; };
+		5EC80C087C27FE7E765AEE22 /* MapFocus.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFD68B43EEBDFC784CB65CE1 /* MapFocus.swift */; };
+		69915A381D1A5939CB25B1B6 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A29CA9ED27148F875A84B524 /* APIClient.swift */; };
 		76296F1DBCCD707A07536BF9 /* MeasurementListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913D8918D66372BCF5AEE669 /* MeasurementListView.swift */; };
 		7FBB7DF4F49A797DFB8FCA75 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F438E0BC11D741B74A55F7D /* ContentView.swift */; };
+		90CC62FDA3EFCA377F8B2908 /* AuthStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 588D860020704C48FB5FD4B6 /* AuthStore.swift */; };
+		9C3F82634B07273732DBE0FE /* M2XLogo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E51B17662E725EF1D072CEA /* M2XLogo.swift */; };
 		B643DDD986CF468894E2CF64 /* LocationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F920BB4E5FF24317ED54A338 /* LocationService.swift */; };
 		BDB4AE5013F88ED250B7B1DA /* CurrentCoachApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3EB98BBBFE371A3C26150C0 /* CurrentCoachApp.swift */; };
 		D05FB838DFB531C3938980B9 /* TideMeasurement.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4027E96B549EE4487D596506 /* TideMeasurement.swift */; };
 		D5BFE10232839A828AFA7986 /* MeasurementStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E279BA698B37B17D98D9037A /* MeasurementStore.swift */; };
+		D7D4A2DE0DBB08B8D11E2C4A /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BE23CC63F7095E170AEA0BD /* KeychainStore.swift */; };
 		DF0C30982203F14A9E56E2D4 /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9516ED597EB0689C1E4B58F4 /* AccountView.swift */; };
+		E2842B2696E5325C59E59D58 /* VectorFieldInterpolator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6173A98444285547F29A6982 /* VectorFieldInterpolator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,16 +42,23 @@
 
 /* Begin PBXFileReference section */
 		1E7149408E4F54B5AC7E49BF /* MeasureViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasureViewModel.swift; sourceTree = "<group>"; };
+		20C496CAC111AB3D4B1FD75E /* SyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncService.swift; sourceTree = "<group>"; };
 		3B704AEF21D198A2F386D453 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3D2DCFA1DC43AAA1EB8D1FB1 /* NauticalMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NauticalMapView.swift; sourceTree = "<group>"; };
 		4027E96B549EE4487D596506 /* TideMeasurement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TideMeasurement.swift; sourceTree = "<group>"; };
 		4F438E0BC11D741B74A55F7D /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		588D860020704C48FB5FD4B6 /* AuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthStore.swift; sourceTree = "<group>"; };
 		5C9FEE9B14EF13DF12EA5E78 /* CurrentCoachTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CurrentCoachTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		6173A98444285547F29A6982 /* VectorFieldInterpolator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VectorFieldInterpolator.swift; sourceTree = "<group>"; };
 		76658760B21A4A085D74C11E /* CurrentCoach.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CurrentCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7BE23CC63F7095E170AEA0BD /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		8E51B17662E725EF1D072CEA /* M2XLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = M2XLogo.swift; sourceTree = "<group>"; };
 		913D8918D66372BCF5AEE669 /* MeasurementListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasurementListView.swift; sourceTree = "<group>"; };
 		9516ED597EB0689C1E4B58F4 /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
 		967B38C72E194D1533A2A75B /* NauticalTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NauticalTheme.swift; sourceTree = "<group>"; };
+		A29CA9ED27148F875A84B524 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		A3EB98BBBFE371A3C26150C0 /* CurrentCoachApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurrentCoachApp.swift; sourceTree = "<group>"; };
+		AFD68B43EEBDFC784CB65CE1 /* MapFocus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapFocus.swift; sourceTree = "<group>"; };
 		B08FB035FBD6A006DA3F59F9 /* MeasureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasureView.swift; sourceTree = "<group>"; };
 		D3850EEA567A8DCBF11BF92F /* MeasurementMapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasurementMapView.swift; sourceTree = "<group>"; };
 		DE1325CD10F5BF51F9B7167D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -57,8 +71,13 @@
 		29074926D2AC220C135640A7 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				A29CA9ED27148F875A84B524 /* APIClient.swift */,
+				588D860020704C48FB5FD4B6 /* AuthStore.swift */,
+				7BE23CC63F7095E170AEA0BD /* KeychainStore.swift */,
 				F920BB4E5FF24317ED54A338 /* LocationService.swift */,
 				E279BA698B37B17D98D9037A /* MeasurementStore.swift */,
+				20C496CAC111AB3D4B1FD75E /* SyncService.swift */,
+				6173A98444285547F29A6982 /* VectorFieldInterpolator.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -89,6 +108,7 @@
 		7951CFB012D4237A2E0C82E3 /* Theme */ = {
 			isa = PBXGroup;
 			children = (
+				8E51B17662E725EF1D072CEA /* M2XLogo.swift */,
 				967B38C72E194D1533A2A75B /* NauticalTheme.swift */,
 			);
 			path = Theme;
@@ -152,6 +172,7 @@
 		D8D9E32255ED7B0D24627775 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				AFD68B43EEBDFC784CB65CE1 /* MapFocus.swift */,
 				4027E96B549EE4487D596506 /* TideMeasurement.swift */,
 			);
 			path = Models;
@@ -251,10 +272,15 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				69915A381D1A5939CB25B1B6 /* APIClient.swift in Sources */,
 				DF0C30982203F14A9E56E2D4 /* AccountView.swift in Sources */,
+				90CC62FDA3EFCA377F8B2908 /* AuthStore.swift in Sources */,
 				7FBB7DF4F49A797DFB8FCA75 /* ContentView.swift in Sources */,
 				BDB4AE5013F88ED250B7B1DA /* CurrentCoachApp.swift in Sources */,
+				D7D4A2DE0DBB08B8D11E2C4A /* KeychainStore.swift in Sources */,
 				B643DDD986CF468894E2CF64 /* LocationService.swift in Sources */,
+				9C3F82634B07273732DBE0FE /* M2XLogo.swift in Sources */,
+				5EC80C087C27FE7E765AEE22 /* MapFocus.swift in Sources */,
 				34F423158FC54539B2B3AED1 /* MeasureView.swift in Sources */,
 				0AEA43638EE795F06897A36C /* MeasureViewModel.swift in Sources */,
 				76296F1DBCCD707A07536BF9 /* MeasurementListView.swift in Sources */,
@@ -262,7 +288,9 @@
 				D5BFE10232839A828AFA7986 /* MeasurementStore.swift in Sources */,
 				43DBAB1DF40759936B0B26CA /* NauticalMapView.swift in Sources */,
 				1377825AE4C5C8482FAA85E7 /* NauticalTheme.swift in Sources */,
+				0BEB5F0D54465A1BC21F27E4 /* SyncService.swift in Sources */,
 				D05FB838DFB531C3938980B9 /* TideMeasurement.swift in Sources */,
+				E2842B2696E5325C59E59D58 /* VectorFieldInterpolator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -290,6 +318,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = location;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -335,7 +364,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 5;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -351,7 +380,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Current Coach";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.mcbrideracing.current-coach";
@@ -410,6 +439,7 @@
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIBackgroundModes = location;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -455,7 +485,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 5;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -477,7 +507,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Current Coach";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.1.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

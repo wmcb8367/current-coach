@@ -1,7 +1,107 @@
 import SwiftUI
 import MapKit
 
-/// UIKit MKMapView wrapper that supports OpenSeaMap tile overlay for nautical charts.
+// MARK: - Chart providers
+
+/// Region-aware chart layer identifiers. The app picks the best data source for
+/// the user's current map center and composes layers automatically — the UI
+/// only exposes a single "Charts" toggle.
+enum ChartLayer: String {
+    /// OpenSeaMap seamarks (buoys, beacons, nav marks). Transparent overlay, global.
+    /// Also carries GEBCO-derived depth contours at z≥12 where no better source exists.
+    case openSeaMapSeamark
+
+    /// EMODnet bathymetry — higher-resolution (~115 m) depth shading for European seas.
+    /// Opaque base-style tiles; sits under the seamarks.
+    case emodnetBathymetry
+
+    var urlTemplate: String {
+        switch self {
+        case .openSeaMapSeamark:
+            return "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png"
+        case .emodnetBathymetry:
+            // v12 RESTful XYZ, multicolour depth shading (red=shallow → blue=deep),
+            // transparent over land so Apple's base map still shows coastline/labels.
+            // Verified 2026-04: returns 256×256 RGBA PNG.
+            return "https://tiles.emodnet-bathymetry.eu/v12/mean_multicolour/web_mercator/{z}/{x}/{y}.png"
+        }
+    }
+
+    var minZ: Int {
+        switch self {
+        case .openSeaMapSeamark: return 9
+        case .emodnetBathymetry: return 2
+        }
+    }
+
+    var maxZ: Int {
+        switch self {
+        case .openSeaMapSeamark: return 18
+        case .emodnetBathymetry: return 12
+        }
+    }
+
+    /// Lower layers paint below higher ones. Bathymetry is a base; seamarks sit on top.
+    var level: MKOverlayLevel {
+        switch self {
+        case .emodnetBathymetry: return .aboveRoads
+        case .openSeaMapSeamark: return .aboveLabels
+        }
+    }
+
+    var canReplaceMapContent: Bool {
+        switch self {
+        case .emodnetBathymetry: return false  // keep Apple labels visible
+        case .openSeaMapSeamark: return false
+        }
+    }
+
+    /// Stable identity for diffing the overlay set between updates.
+    var id: String { rawValue }
+
+    /// Rough bounding box in which this provider has genuinely better data than the global default.
+    /// Used for region-based selection.
+    func covers(_ coordinate: CLLocationCoordinate2D) -> Bool {
+        switch self {
+        case .openSeaMapSeamark:
+            return true // global
+        case .emodnetBathymetry:
+            // EMODnet covers all European marine waters: Mediterranean, Baltic,
+            // North Sea, Atlantic margin, Black Sea, Arctic margin.
+            return coordinate.latitude >= 24 && coordinate.latitude <= 90
+                && coordinate.longitude >= -42 && coordinate.longitude <= 55
+        }
+    }
+}
+
+/// MKTileOverlay subclass that carries its layer identity so we can diff
+/// overlays on update without reading URLs.
+final class IdentifiedTileOverlay: MKTileOverlay {
+    let layer: ChartLayer
+    init(layer: ChartLayer) {
+        self.layer = layer
+        super.init(urlTemplate: layer.urlTemplate)
+        self.canReplaceMapContent = layer.canReplaceMapContent
+        self.minimumZ = layer.minZ
+        self.maximumZ = layer.maxZ
+    }
+}
+
+/// Pick the best chart composition for the given map center. Seamarks are always
+/// present when charts are enabled; bathymetry adds EMODnet where it helps.
+func chartLayers(for coordinate: CLLocationCoordinate2D) -> [ChartLayer] {
+    var layers: [ChartLayer] = []
+    if ChartLayer.emodnetBathymetry.covers(coordinate) {
+        layers.append(.emodnetBathymetry)
+    }
+    layers.append(.openSeaMapSeamark)
+    return layers
+}
+
+// MARK: - Map view
+
+/// UIKit MKMapView wrapper that composes region-aware nautical chart overlays
+/// and renders current-measurement arrows as annotations.
 struct NauticalMapView: UIViewRepresentable {
     let measurements: [TideMeasurement]
     let showChartOverlay: Bool
@@ -20,18 +120,22 @@ struct NauticalMapView: UIViewRepresentable {
     }
 
     func updateUIView(_ mapView: MKMapView, context: Context) {
-        // Update chart overlay
-        let hasOverlay = mapView.overlays.contains { $0 is MKTileOverlay }
-        if showChartOverlay && !hasOverlay {
-            // OpenSeaMap seamark tiles (transparent overlay on base map)
-            let seamarkOverlay = MKTileOverlay(urlTemplate: "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png")
-            seamarkOverlay.canReplaceMapContent = false
-            seamarkOverlay.maximumZ = 18
-            seamarkOverlay.minimumZ = 9
-            mapView.addOverlay(seamarkOverlay, level: .aboveLabels)
-        } else if !showChartOverlay && hasOverlay {
-            let tileOverlays = mapView.overlays.filter { $0 is MKTileOverlay }
-            mapView.removeOverlays(tileOverlays)
+        // Reconcile chart overlays against the region-aware desired set.
+        let desired: [ChartLayer] = showChartOverlay ? chartLayers(for: mapView.region.center) : []
+        let desiredSet = Set(desired.map(\.id))
+
+        // Remove overlays we no longer want. Only touch our own tile overlays.
+        for overlay in mapView.overlays {
+            guard let tiled = overlay as? IdentifiedTileOverlay else { continue }
+            if !desiredSet.contains(tiled.layer.id) {
+                mapView.removeOverlay(tiled)
+            }
+        }
+
+        let existingSet = Set(mapView.overlays.compactMap { ($0 as? IdentifiedTileOverlay)?.layer.id })
+        for layer in desired where !existingSet.contains(layer.id) {
+            let overlay = IdentifiedTileOverlay(layer: layer)
+            mapView.addOverlay(overlay, level: layer.level)
         }
 
         // Update annotations
@@ -68,25 +172,20 @@ struct NauticalMapView: UIViewRepresentable {
             guard let currentAnnotation = annotation as? CurrentAnnotation else { return nil }
 
             let identifier = "CurrentArrow"
-            let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) ?? MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
-
+            let view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier)
+                ?? MKAnnotationView(annotation: annotation, reuseIdentifier: identifier)
             view.annotation = annotation
 
-            let measurement = currentAnnotation.measurement
-            let renderer = UIHostingController(rootView: CurrentArrowOverlay(measurement: measurement))
-            renderer.view.backgroundColor = .clear
-            renderer.view.frame = CGRect(x: 0, y: 0, width: 100, height: 80)
-            renderer.view.sizeToFit()
-
-            // Snapshot the SwiftUI view into an image
-            let size = renderer.view.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize)
-            renderer.view.frame = CGRect(origin: .zero, size: size)
-            let image = UIGraphicsImageRenderer(size: size).image { _ in
-                renderer.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+            // Render the SwiftUI overlay into a UIImage via SwiftUI's ImageRenderer.
+            // The prior UIHostingController + drawHierarchy path produced 0×0 images
+            // because the hosting controller was never in a window.
+            let overlay = CurrentArrowOverlay(measurement: currentAnnotation.measurement)
+            let renderer = ImageRenderer(content: overlay)
+            renderer.scale = UIScreen.main.scale
+            if let image = renderer.uiImage {
+                view.image = image
+                view.centerOffset = CGPoint(x: 0, y: -image.size.height / 2)
             }
-
-            view.image = image
-            view.centerOffset = CGPoint(x: 0, y: -size.height / 2)
             return view
         }
 

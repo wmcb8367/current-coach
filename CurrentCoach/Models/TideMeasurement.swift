@@ -10,6 +10,8 @@ struct TideMeasurement: Identifiable, Codable, Hashable, Sendable {
     let latitude: Double
     let longitude: Double
     let isValid: Bool
+    var confidence: Double?
+    var syncedAt: Date?
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)

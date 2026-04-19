@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MeasurementListView: View {
     let store: MeasurementStore
+    var onSelectMeasurement: ((TideMeasurement) -> Void)? = nil
     @State private var selection = Set<UUID>()
 
     var body: some View {
@@ -9,8 +10,22 @@ struct MeasurementListView: View {
             NT.bgPrimary.ignoresSafeArea()
 
             VStack(spacing: 0) {
+                // Header
+                HStack(spacing: 12) {
+                    M2XLogo(height: 22)
+                    Rectangle()
+                        .fill(NT.borderSubtle)
+                        .frame(width: 1, height: 18)
+                    Text("Measurements")
+                        .eyebrow(NT.textSecondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 12)
+
                 // Toolbar
-                HStack(spacing: 16) {
+                HStack(spacing: 12) {
                     Button(selection.count == store.measurements.count ? "Deselect All" : "Select All") {
                         if selection.count == store.measurements.count {
                             selection.removeAll()
@@ -20,20 +35,24 @@ struct MeasurementListView: View {
                     }
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(NT.accentTeal)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(
-                        Capsule()
-                            .fill(NT.bgSurface)
-                            .overlay(Capsule().stroke(NT.accentTeal.opacity(0.3), lineWidth: 1))
+                        Capsule().fill(NT.accentTeal.opacity(0.15))
+                    )
+                    .overlay(
+                        Capsule().strokeBorder(NT.accentTeal.opacity(0.35), lineWidth: 1)
                     )
 
                     Spacer()
 
                     ShareLink(items: exportText()) {
                         Image(systemName: "square.and.arrow.up")
-                            .font(.title2)
+                            .font(.title3)
                             .foregroundStyle(NT.accentTeal)
+                            .padding(10)
+                            .background(Circle().fill(NT.bgCard))
+                            .overlay(Circle().strokeBorder(NT.borderSubtle, lineWidth: 1))
                     }
                     .disabled(selection.isEmpty && store.measurements.isEmpty)
 
@@ -43,22 +62,24 @@ struct MeasurementListView: View {
                         selection.removeAll()
                     } label: {
                         Image(systemName: "trash")
-                            .font(.title2)
+                            .font(.title3)
                             .foregroundStyle(NT.accentCoral)
+                            .padding(10)
+                            .background(Circle().fill(NT.bgCard))
+                            .overlay(Circle().strokeBorder(NT.borderSubtle, lineWidth: 1))
                     }
                     .disabled(selection.isEmpty)
                 }
                 .padding(.horizontal)
-                .padding(.vertical, 10)
-                .background(NT.bgCard)
+                .padding(.bottom, 8)
 
                 // List
                 if store.measurements.isEmpty {
                     Spacer()
-                    VStack(spacing: 12) {
+                    VStack(spacing: 14) {
                         Image(systemName: "water.waves")
                             .font(.system(size: 60))
-                            .foregroundStyle(NT.textDim)
+                            .foregroundStyle(NT.textFaint)
                         Text("No Measurements")
                             .font(.title3.weight(.semibold))
                             .foregroundStyle(NT.textSecondary)
@@ -76,25 +97,33 @@ struct MeasurementListView: View {
                                     MeasurementRow(
                                         measurement: measurement,
                                         isSelected: selection.contains(measurement.id),
-                                        onToggle: {
+                                        onToggleSelect: {
                                             if selection.contains(measurement.id) {
                                                 selection.remove(measurement.id)
                                             } else {
                                                 selection.insert(measurement.id)
                                             }
-                                        }
+                                        },
+                                        onOpenInMap: { onSelectMeasurement?(measurement) }
                                     )
                                     .listRowBackground(
-                                        RoundedRectangle(cornerRadius: 12)
+                                        RoundedRectangle(cornerRadius: NT.cardRadius, style: .continuous)
                                             .fill(selection.contains(measurement.id) ? NT.accentTeal.opacity(0.12) : NT.bgCard)
-                                            .padding(.vertical, 2)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: NT.cardRadius, style: .continuous)
+                                                    .strokeBorder(
+                                                        selection.contains(measurement.id) ? NT.accentTeal.opacity(0.4) : NT.borderSubtle,
+                                                        lineWidth: 1
+                                                    )
+                                            )
+                                            .padding(.vertical, 3)
                                     )
                                     .listRowSeparator(.hidden)
                                 }
                             } header: {
                                 Text(section.date)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(NT.accentAmber)
+                                    .eyebrow(NT.accentTealSoft)
+                                    .padding(.top, 6)
                             }
                         }
                     }
@@ -120,40 +149,62 @@ struct MeasurementListView: View {
 private struct MeasurementRow: View {
     let measurement: TideMeasurement
     let isSelected: Bool
-    let onToggle: () -> Void
+    let onToggleSelect: () -> Void
+    let onOpenInMap: () -> Void
 
     var body: some View {
-        Button(action: onToggle) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(measurement.timeFormatted)
-                            .font(.title2.weight(.bold).monospacedDigit())
-                            .foregroundStyle(NT.textPrimary)
-                        Text("Dur:\(measurement.durationFormatted)")
-                            .font(.caption)
-                            .foregroundStyle(NT.textSecondary)
-                    }
-                    HStack(spacing: 8) {
-                        Text(String(format: "%.1f m/min", measurement.speedMetersPerMinute))
-                            .font(.headline)
-                            .foregroundStyle(NT.accentTeal)
-                        Text(String(format: "From: %.0f°", measurement.fromDirection))
-                            .font(.headline)
-                            .foregroundStyle(NT.textSecondary)
-                        Circle()
-                            .fill(measurement.isValid ? NT.gpsGreat : NT.accentCoral)
-                            .frame(width: 10, height: 10)
-                    }
-                }
-
-                Spacer()
-
-                Image(systemName: "map.fill")
+        HStack(spacing: 12) {
+            Button(action: onToggleSelect) {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title2)
-                    .foregroundStyle(NT.accentAmber)
+                    .foregroundStyle(isSelected ? NT.accentTeal : NT.textFaint)
+                    .contentShape(.rect)
             }
-            .padding(.vertical, 4)
+            .buttonStyle(.plain)
+
+            Button(action: onOpenInMap) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text(measurement.timeFormatted)
+                                .font(.title2.weight(.bold).monospacedDigit())
+                                .foregroundStyle(NT.textPrimary)
+                            Text(measurement.durationFormatted)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(NT.textDim)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(NT.bgSurface))
+                        }
+                        HStack(spacing: 10) {
+                            Text(String(format: "%.1f m/min", measurement.speedMetersPerMinute))
+                                .font(.headline)
+                                .foregroundStyle(NT.accentTeal)
+                            Text(String(format: "%.0f°", measurement.fromDirection))
+                                .font(.headline)
+                                .foregroundStyle(NT.textSecondary)
+                            Circle()
+                                .fill(measurement.isValid ? NT.gpsGreat : NT.accentCoral)
+                                .frame(width: 8, height: 8)
+                            if measurement.syncedAt != nil {
+                                Image(systemName: "icloud.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(NT.accentTealSoft)
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(NT.textFaint)
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
         }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
     }
 }
