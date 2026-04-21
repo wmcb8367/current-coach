@@ -8,22 +8,26 @@ import MapKit
 /// only exposes a single "Charts" toggle.
 enum ChartLayer: String {
     /// OpenSeaMap seamarks (buoys, beacons, nav marks). Transparent overlay, global.
-    /// Also carries GEBCO-derived depth contours at z≥12 where no better source exists.
     case openSeaMapSeamark
 
     /// EMODnet bathymetry — higher-resolution (~115 m) depth shading for European seas.
-    /// Opaque base-style tiles; sits under the seamarks.
     case emodnetBathymetry
+
+    /// NOAA ENC chart display — traditional paper-chart symbology for US waters.
+    /// WMS served as XYZ-style tiles via bbox substitution.
+    case noaaChart
 
     var urlTemplate: String {
         switch self {
         case .openSeaMapSeamark:
             return "https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png"
         case .emodnetBathymetry:
-            // v12 RESTful XYZ, multicolour depth shading (red=shallow → blue=deep),
-            // transparent over land so Apple's base map still shows coastline/labels.
-            // Verified 2026-04: returns 256×256 RGBA PNG.
             return "https://tiles.emodnet-bathymetry.eu/v12/mean_multicolour/web_mercator/{z}/{x}/{y}.png"
+        case .noaaChart:
+            // NOAA Chart Display Service — WMS endpoint. MKTileOverlay will
+            // substitute {z}/{x}/{y}; we override loadTile to build the
+            // correct WMS bbox request instead.
+            return "https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/WMSServer"
         }
     }
 
@@ -31,6 +35,7 @@ enum ChartLayer: String {
         switch self {
         case .openSeaMapSeamark: return 9
         case .emodnetBathymetry: return 2
+        case .noaaChart: return 8
         }
     }
 
@@ -38,38 +43,39 @@ enum ChartLayer: String {
         switch self {
         case .openSeaMapSeamark: return 18
         case .emodnetBathymetry: return 12
+        case .noaaChart: return 18
         }
     }
 
-    /// Lower layers paint below higher ones. Bathymetry is a base; seamarks sit on top.
     var level: MKOverlayLevel {
         switch self {
         case .emodnetBathymetry: return .aboveRoads
+        case .noaaChart: return .aboveRoads
         case .openSeaMapSeamark: return .aboveLabels
         }
     }
 
     var canReplaceMapContent: Bool {
         switch self {
-        case .emodnetBathymetry: return false  // keep Apple labels visible
+        case .emodnetBathymetry: return false
+        case .noaaChart: return false
         case .openSeaMapSeamark: return false
         }
     }
 
-    /// Stable identity for diffing the overlay set between updates.
     var id: String { rawValue }
 
-    /// Rough bounding box in which this provider has genuinely better data than the global default.
-    /// Used for region-based selection.
     func covers(_ coordinate: CLLocationCoordinate2D) -> Bool {
         switch self {
         case .openSeaMapSeamark:
-            return true // global
+            return true
         case .emodnetBathymetry:
-            // EMODnet covers all European marine waters: Mediterranean, Baltic,
-            // North Sea, Atlantic margin, Black Sea, Arctic margin.
             return coordinate.latitude >= 24 && coordinate.latitude <= 90
                 && coordinate.longitude >= -42 && coordinate.longitude <= 55
+        case .noaaChart:
+            // NOAA ENC covers US waters (incl. territories, Great Lakes)
+            return coordinate.latitude >= 17 && coordinate.latitude <= 72
+                && coordinate.longitude >= -180 && coordinate.longitude <= -60
         }
     }
 }
@@ -80,10 +86,31 @@ final class IdentifiedTileOverlay: MKTileOverlay {
     let layer: ChartLayer
     init(layer: ChartLayer) {
         self.layer = layer
-        super.init(urlTemplate: layer.urlTemplate)
+        let template = layer == .noaaChart ? nil : layer.urlTemplate
+        super.init(urlTemplate: template)
         self.canReplaceMapContent = layer.canReplaceMapContent
         self.minimumZ = layer.minZ
         self.maximumZ = layer.maxZ
+        self.tileSize = CGSize(width: 256, height: 256)
+    }
+
+    override func url(forTilePath path: MKTileOverlayPath) -> URL {
+        guard layer == .noaaChart else {
+            return super.url(forTilePath: path)
+        }
+        // Convert tile x/y/z to EPSG:3857 bbox for WMS request
+        let n = Double(1 << path.z)
+        let tileX = Double(path.x)
+        let tileY = Double(path.y)
+        let originShift = 20037508.342789244
+        let tileSize = 2.0 * originShift / n
+        let minX = -originShift + tileX * tileSize
+        let maxX = minX + tileSize
+        let maxY = originShift - tileY * tileSize
+        let minY = maxY - tileSize
+        let bbox = "\(minX),\(minY),\(maxX),\(maxY)"
+        let urlStr = "\(layer.urlTemplate)?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=0,1,2,3,4,5,6,7&SRS=EPSG:3857&WIDTH=256&HEIGHT=256&BBOX=\(bbox)"
+        return URL(string: urlStr)!
     }
 }
 
@@ -93,6 +120,9 @@ func chartLayers(for coordinate: CLLocationCoordinate2D) -> [ChartLayer] {
     var layers: [ChartLayer] = []
     if ChartLayer.emodnetBathymetry.covers(coordinate) {
         layers.append(.emodnetBathymetry)
+    }
+    if ChartLayer.noaaChart.covers(coordinate) {
+        layers.append(.noaaChart)
     }
     layers.append(.openSeaMapSeamark)
     return layers
@@ -140,7 +170,16 @@ struct NauticalMapView: UIViewRepresentable {
 
         // Update annotations
         mapView.removeAnnotations(mapView.annotations.filter { $0 is CurrentAnnotation })
-        let annotations = measurements.map { CurrentAnnotation(measurement: $0) }
+        let speeds = measurements.map(\.speedMetersPerMinute)
+        let minSpd = speeds.min() ?? 0
+        let maxSpd = speeds.max() ?? 1
+        let range = max(maxSpd - minSpd, 0.001)
+        let annotations = measurements.map { m in
+            CurrentAnnotation(
+                measurement: m,
+                speedFraction: (m.speedMetersPerMinute - minSpd) / range
+            )
+        }
         mapView.addAnnotations(annotations)
 
         // Update region if significantly different
@@ -179,7 +218,10 @@ struct NauticalMapView: UIViewRepresentable {
             // Render the SwiftUI overlay into a UIImage via SwiftUI's ImageRenderer.
             // The prior UIHostingController + drawHierarchy path produced 0×0 images
             // because the hosting controller was never in a window.
-            let overlay = CurrentArrowOverlay(measurement: currentAnnotation.measurement)
+            let overlay = CurrentArrowOverlay(
+                measurement: currentAnnotation.measurement,
+                speedFraction: currentAnnotation.speedFraction
+            )
             let renderer = ImageRenderer(content: overlay)
             renderer.scale = UIScreen.main.scale
             if let image = renderer.uiImage {
@@ -200,24 +242,38 @@ struct NauticalMapView: UIViewRepresentable {
 final class CurrentAnnotation: NSObject, MKAnnotation {
     let measurement: TideMeasurement
     let coordinate: CLLocationCoordinate2D
+    var speedFraction: Double = 0.5
 
-    init(measurement: TideMeasurement) {
+    init(measurement: TideMeasurement, speedFraction: Double = 0.5) {
         self.measurement = measurement
         self.coordinate = measurement.coordinate
+        self.speedFraction = speedFraction
         super.init()
     }
 }
 
 // MARK: - Arrow SwiftUI overlay for snapshot
 
+/// Continuous speed → color matching the web portal’s colorForSpeed().
+/// blue(210°) → cyan → green → yellow → red(0°).
+func colorForSpeed(fraction: Double) -> Color {
+    let t = max(0, min(1, fraction))
+    let hue = (210.0 - t * 210.0) / 360.0  // SwiftUI hue is 0..1
+    let sat = 0.75 + t * 0.15
+    let lum = 0.50 + (1 - abs(t - 0.5) * 2) * 0.15
+    // SwiftUI Color(hue:saturation:brightness:) uses HSB not HSL,
+    // convert HSL → HSB:
+    let b = lum + sat * min(lum, 1 - lum)
+    let s = b > 0 ? 2 * (1 - lum / b) : 0
+    return Color(hue: hue, saturation: s, brightness: b)
+}
+
 private struct CurrentArrowOverlay: View {
     let measurement: TideMeasurement
+    var speedFraction: Double = 0.5  // 0..1 relative to session range
 
     private var arrowColor: Color {
-        let speed = measurement.speedMetersPerMinute
-        if speed < 3 { return NT.accentTeal }
-        if speed < 6 { return NT.accentAmber }
-        return NT.accentCoral
+        colorForSpeed(fraction: speedFraction)
     }
 
     var body: some View {
