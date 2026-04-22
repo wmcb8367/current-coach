@@ -10,6 +10,9 @@ struct VectorFieldSample: Identifiable, Sendable {
     let flowDirectionDegrees: Double
     /// 0...1 — low when no measurements are close to this grid cell.
     let confidence: Double
+
+    /// Speed in knots (1 knot = 1852 m/hr = 30.87 m/min)
+    var speedKnots: Double { speedMetersPerMinute * 60.0 / 1852.0 }
 }
 
 struct VectorFieldResult: Sendable {

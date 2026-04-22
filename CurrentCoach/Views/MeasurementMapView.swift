@@ -89,25 +89,17 @@ struct MeasurementMapView: View {
                         UserAnnotation()
 
                         if let field = vectorField {
-                            let fieldSpeeds = field.samples.map(\.speedMetersPerMinute)
-                            let fMin = fieldSpeeds.min() ?? 0
-                            let fMax = fieldSpeeds.max() ?? 1
-                            let fRange = max(fMax - fMin, 0.001)
                             ForEach(field.samples) { sample in
                                 Annotation("", coordinate: CLLocationCoordinate2D(latitude: sample.latitude, longitude: sample.longitude), anchor: .center) {
-                                    FieldArrowView(sample: sample, speedFraction: (sample.speedMetersPerMinute - fMin) / fRange)
+                                    FieldArrowView(sample: sample, speedFraction: sample.speedKnots / 1.5)
                                 }
                                 .annotationTitles(.hidden)
                             }
                         }
 
-                        let mSpeeds = filteredMeasurements.map(\.speedMetersPerMinute)
-                        let mMin = mSpeeds.min() ?? 0
-                        let mMax = mSpeeds.max() ?? 1
-                        let mRange = max(mMax - mMin, 0.001)
                         ForEach(filteredMeasurements) { measurement in
                             Annotation("", coordinate: measurement.coordinate, anchor: .center) {
-                                CurrentArrowView(measurement: measurement, speedFraction: (measurement.speedMetersPerMinute - mMin) / mRange)
+                                CurrentArrowView(measurement: measurement, speedFraction: measurement.speedKnots / 1.5)
                             }
                         }
                     }

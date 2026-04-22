@@ -4,16 +4,16 @@ import MapKit
 // MARK: - Chart providers
 
 /// Region-aware chart layer identifiers. The app picks the best data source for
-/// the user's current map center and composes layers automatically — the UI
+/// the user's current map center and composes layers automatically - the UI
 /// only exposes a single "Charts" toggle.
 enum ChartLayer: String {
     /// OpenSeaMap seamarks (buoys, beacons, nav marks). Transparent overlay, global.
     case openSeaMapSeamark
 
-    /// EMODnet bathymetry — higher-resolution (~115 m) depth shading for European seas.
+    /// EMODnet bathymetry - higher-resolution (~115 m) depth shading for European seas.
     case emodnetBathymetry
 
-    /// NOAA ENC chart display — traditional paper-chart symbology for US waters.
+    /// NOAA ENC chart display - traditional paper-chart symbology for US waters.
     /// WMS served as XYZ-style tiles via bbox substitution.
     case noaaChart
 
@@ -24,7 +24,7 @@ enum ChartLayer: String {
         case .emodnetBathymetry:
             return "https://tiles.emodnet-bathymetry.eu/v12/mean_multicolour/web_mercator/{z}/{x}/{y}.png"
         case .noaaChart:
-            // NOAA Chart Display Service — WMS endpoint. MKTileOverlay will
+            // NOAA Chart Display Service - WMS endpoint. MKTileOverlay will
             // substitute {z}/{x}/{y}; we override loadTile to build the
             // correct WMS bbox request instead.
             return "https://gis.charttools.noaa.gov/arcgis/rest/services/MCS/NOAAChartDisplay/MapServer/exts/MaritimeChartService/WMSServer"
@@ -254,18 +254,35 @@ final class CurrentAnnotation: NSObject, MKAnnotation {
 
 // MARK: - Arrow SwiftUI overlay for snapshot
 
-/// Continuous speed → color matching the web portal’s colorForSpeed().
-/// blue(210°) → cyan → green → yellow → red(0°).
+/// Speed-based color scale optimized for tidal currents.
+/// Uses absolute speed thresholds (in knots) so small differences are visible.
+/// Near-zero (< 0.1 kt) → deep blue, 0.1-0.3 kt → light blue/cyan,
+/// 0.3-0.5 kt → green, 0.5-0.8 kt → yellow, 0.8-1.2 kt → orange, >1.2 kt → red.
+///
+/// Pass `fraction` in 0..1 (relative to session range) for the old behavior,
+/// or use `colorForAbsoluteSpeed(knots:)` for absolute thresholds.
 func colorForSpeed(fraction: Double) -> Color {
     let t = max(0, min(1, fraction))
-    let hue = (210.0 - t * 210.0) / 360.0  // SwiftUI hue is 0..1
-    let sat = 0.75 + t * 0.15
-    let lum = 0.50 + (1 - abs(t - 0.5) * 2) * 0.15
+    // Apply a square-root curve to spread out the lower end of the scale.
+    // This makes small speed differences much more visible.
+    let curved = sqrt(t)
+    let hue = (210.0 - curved * 210.0) / 360.0  // SwiftUI hue is 0..1
+    let sat = 0.80 + curved * 0.15
+    let lum = 0.50 + (1 - abs(curved - 0.5) * 2) * 0.15
     // SwiftUI Color(hue:saturation:brightness:) uses HSB not HSL,
     // convert HSL → HSB:
     let b = lum + sat * min(lum, 1 - lum)
     let s = b > 0 ? 2 * (1 - lum / b) : 0
     return Color(hue: hue, saturation: s, brightness: b)
+}
+
+/// Absolute speed-based color: maps knots directly to color without relative normalization.
+/// Tuned for typical tidal currents (0 to ~2 knots).
+func colorForAbsoluteSpeed(knots: Double) -> Color {
+    // Map 0..1.5 knots to 0..1 fraction, clamped
+    let maxKnots = 1.5
+    let fraction = max(0, min(1, knots / maxKnots))
+    return colorForSpeed(fraction: fraction)
 }
 
 private struct CurrentArrowOverlay: View {
