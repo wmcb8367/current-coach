@@ -254,35 +254,23 @@ final class CurrentAnnotation: NSObject, MKAnnotation {
 
 // MARK: - Arrow SwiftUI overlay for snapshot
 
-/// Speed-based color scale optimized for tidal currents.
-/// Uses absolute speed thresholds (in knots) so small differences are visible.
-/// Near-zero (< 0.1 kt) → deep blue, 0.1-0.3 kt → light blue/cyan,
-/// 0.3-0.5 kt → green, 0.5-0.8 kt → yellow, 0.8-1.2 kt → orange, >1.2 kt → red.
-///
-/// Pass `fraction` in 0..1 (relative to session range) for the old behavior,
-/// or use `colorForAbsoluteSpeed(knots:)` for absolute thresholds.
+/// Speed → color matching the M2X web portal's colorForSpeed().
+/// blue(210°) → cyan → green → yellow → red(0°).
+/// Uses HSL with same formula as web: hue=210-t*210, sat=75+t*15, lum=50+(1-abs(t-0.5)*2)*15
+/// Plus a sqrt() curve to spread out the low end for better visibility of small current differences.
 func colorForSpeed(fraction: Double) -> Color {
     let t = max(0, min(1, fraction))
-    // Apply a square-root curve to spread out the lower end of the scale.
-    // This makes small speed differences much more visible.
+    // sqrt curve spreads out small speed differences at the low end
     let curved = sqrt(t)
-    let hue = (210.0 - curved * 210.0) / 360.0  // SwiftUI hue is 0..1
-    let sat = 0.80 + curved * 0.15
-    let lum = 0.50 + (1 - abs(curved - 0.5) * 2) * 0.15
-    // SwiftUI Color(hue:saturation:brightness:) uses HSB not HSL,
-    // convert HSL → HSB:
-    let b = lum + sat * min(lum, 1 - lum)
-    let s = b > 0 ? 2 * (1 - lum / b) : 0
+    // Match web portal HSL: hue = 210 - t*210, sat = 75 + t*15, lum = 50 + (1-abs(t-0.5)*2)*15
+    let hDeg = 210.0 - curved * 210.0
+    let hue = hDeg / 360.0  // SwiftUI hue is 0..1
+    let satPct = (75.0 + curved * 15.0) / 100.0
+    let lumPct = (50.0 + (1.0 - abs(curved - 0.5) * 2.0) * 15.0) / 100.0
+    // Convert HSL → HSB for SwiftUI Color(hue:saturation:brightness:)
+    let b = lumPct + satPct * min(lumPct, 1.0 - lumPct)
+    let s = b > 0 ? 2.0 * (1.0 - lumPct / b) : 0.0
     return Color(hue: hue, saturation: s, brightness: b)
-}
-
-/// Absolute speed-based color: maps knots directly to color without relative normalization.
-/// Tuned for typical tidal currents (0 to ~2 knots).
-func colorForAbsoluteSpeed(knots: Double) -> Color {
-    // Map 0..1.5 knots to 0..1 fraction, clamped
-    let maxKnots = 1.5
-    let fraction = max(0, min(1, knots / maxKnots))
-    return colorForSpeed(fraction: fraction)
 }
 
 private struct CurrentArrowOverlay: View {
