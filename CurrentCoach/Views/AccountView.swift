@@ -45,6 +45,8 @@ private struct SignedInView: View {
     let auth: AuthStore
     let sync: SyncService
 
+    @State private var showDeleteConfirmation = false
+
     var body: some View {
         VStack(spacing: 18) {
             VStack(spacing: 10) {
@@ -155,6 +157,30 @@ private struct SignedInView: View {
                     .padding(.vertical, 10)
             }
             .padding(.top, 6)
+
+            Button {
+                showDeleteConfirmation = true
+            } label: {
+                HStack(spacing: 6) {
+                    if auth.isBusy {
+                        ProgressView().controlSize(.small).tint(NT.accentCoral)
+                    }
+                    Text("Delete Account")
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(NT.accentCoral.opacity(0.7))
+                .padding(.horizontal, 20)
+                .padding(.vertical, 8)
+            }
+            .disabled(auth.isBusy)
+            .alert("Delete Account", isPresented: $showDeleteConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete Account", role: .destructive) {
+                    Task { await auth.deleteAccount() }
+                }
+            } message: {
+                Text("This will permanently delete your account and all associated data. This action cannot be undone.")
+            }
         }
     }
 }

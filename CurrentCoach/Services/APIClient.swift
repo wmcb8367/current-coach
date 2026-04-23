@@ -48,6 +48,8 @@ struct SyncRequestItem: Codable {
 struct SyncAccepted: Codable { let id: String; let clientId: String }
 struct SyncResponse: Codable { let ok: Bool; let syncedAt: Date; let accepted: [SyncAccepted] }
 
+struct DeleteAccountResponse: Codable { let success: Bool }
+
 struct Preferences: Codable, Sendable, Equatable {
     let currentCoachSyncEnabled: Bool
 }
@@ -106,6 +108,17 @@ final class APIClient {
         var body: [String: Any] = ["email": email, "password": password, "acceptedLegal": true]
         if let name, !name.isEmpty { body["name"] = name }
         return try await postJSON(path: "/api/mobile/register", body: body)
+    }
+
+    // MARK: - Account
+
+    func deleteAccount(token: String) async throws {
+        let _: DeleteAccountResponse = try await send(
+            path: "/api/mobile/delete-account",
+            method: "DELETE",
+            body: nil,
+            token: token
+        )
     }
 
     // MARK: - Sync

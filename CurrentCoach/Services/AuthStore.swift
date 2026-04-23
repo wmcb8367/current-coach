@@ -58,6 +58,21 @@ final class AuthStore {
         KeychainStore.delete(Key.userJSON)
     }
 
+    func deleteAccount() async {
+        guard let token else { return }
+        isBusy = true
+        lastError = nil
+        defer { isBusy = false }
+        do {
+            try await api.deleteAccount(token: token)
+            signOut()
+        } catch let error as APIError {
+            lastError = error.errorDescription
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     /// Pull the latest preferences from the server. Safe to call on app
     /// foreground, post-sign-in, or whenever we suspect the local copy is
     /// stale (e.g. after a 403 from the sync endpoint).
