@@ -50,7 +50,7 @@
 		588D860020704C48FB5FD4B6 /* AuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthStore.swift; sourceTree = "<group>"; };
 		5C9FEE9B14EF13DF12EA5E78 /* CurrentCoachTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CurrentCoachTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		6173A98444285547F29A6982 /* VectorFieldInterpolator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VectorFieldInterpolator.swift; sourceTree = "<group>"; };
-		76658760B21A4A085D74C11E /* CurrentCoach.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CurrentCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		76658760B21A4A085D74C11E /* CurrentCoach.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CurrentCoach.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7BE23CC63F7095E170AEA0BD /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		8E51B17662E725EF1D072CEA /* M2XLogo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = M2XLogo.swift; sourceTree = "<group>"; };
 		913D8918D66372BCF5AEE669 /* MeasurementListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeasurementListView.swift; sourceTree = "<group>"; };
@@ -225,8 +225,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = 33F536B560A5725AA4AEF13E /* Build configuration list for PBXProject "CurrentCoach" */;
 			developmentRegion = en;
@@ -310,6 +308,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = JG4KT8HV3G;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CurrentCoach/Info.plist;
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Current Coach needs background location access to continue measuring tidal current when the app is minimized.";
@@ -431,6 +430,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				DEVELOPMENT_TEAM = JG4KT8HV3G;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CurrentCoach/Info.plist;
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "Current Coach needs background location access to continue measuring tidal current when the app is minimized.";

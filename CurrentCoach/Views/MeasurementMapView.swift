@@ -43,6 +43,8 @@ struct MeasurementMapView: View {
         span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1)
     )
 
+    @State private var mapHeading: Double = 0
+
     // Time scrubber: position in last 24h (0 = now, 86400 = 24h ago)
     @State private var scrubberSecondsAgo: Double = 0
     @State private var lookback: LookbackPeriod = .oneHour
@@ -91,7 +93,7 @@ struct MeasurementMapView: View {
                         if let field = vectorField {
                             ForEach(field.samples) { sample in
                                 Annotation("", coordinate: CLLocationCoordinate2D(latitude: sample.latitude, longitude: sample.longitude), anchor: .center) {
-                                    FieldArrowView(sample: sample, speedFraction: sample.speedKnots / 1.5)
+                                    FieldArrowView(sample: sample, speedFraction: sample.speedKnots / 1.5, mapHeading: mapHeading)
                                 }
                                 .annotationTitles(.hidden)
                             }
@@ -99,11 +101,14 @@ struct MeasurementMapView: View {
 
                         ForEach(filteredMeasurements) { measurement in
                             Annotation("", coordinate: measurement.coordinate, anchor: .center) {
-                                CurrentArrowView(measurement: measurement, speedFraction: measurement.speedKnots / 1.5)
+                                CurrentArrowView(measurement: measurement, speedFraction: measurement.speedKnots / 1.5, mapHeading: mapHeading)
                             }
                         }
                     }
                     .mapStyle(mapStyle == .satellite ? .imagery(elevation: .flat) : .standard)
+                    .onMapCameraChange(frequency: .continuous) { context in
+                        mapHeading = context.camera.heading
+                    }
                     .mapControls {
                         MapUserLocationButton()
                         MapCompass()
@@ -404,6 +409,7 @@ struct MeasurementMapView: View {
 private struct CurrentArrowView: View {
     let measurement: TideMeasurement
     var speedFraction: Double = 0.5
+    var mapHeading: Double = 0
 
     private var arrowColor: Color {
         colorForSpeed(fraction: speedFraction)
@@ -415,7 +421,7 @@ private struct CurrentArrowView: View {
                 .font(.title)
                 .fontWeight(.bold)
                 .foregroundStyle(arrowColor)
-                .rotationEffect(.degrees(measurement.flowDirection))
+                .rotationEffect(.degrees(measurement.flowDirection - mapHeading))
                 .shadow(color: .black.opacity(0.55), radius: 3, y: 1)
 
             VStack(alignment: .leading, spacing: 0) {
@@ -449,6 +455,7 @@ private struct CurrentArrowView: View {
 private struct FieldArrowView: View {
     let sample: VectorFieldSample
     var speedFraction: Double = 0.5
+    var mapHeading: Double = 0
 
     private var color: Color {
         colorForSpeed(fraction: speedFraction)
@@ -458,6 +465,6 @@ private struct FieldArrowView: View {
         Image(systemName: "arrow.up")
             .font(.system(size: 12, weight: .medium))
             .foregroundStyle(color.opacity(0.25 + 0.45 * sample.confidence))
-            .rotationEffect(.degrees(sample.flowDirectionDegrees))
+            .rotationEffect(.degrees(sample.flowDirectionDegrees - mapHeading))
     }
 }
