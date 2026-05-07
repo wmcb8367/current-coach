@@ -24,6 +24,9 @@ struct VectorFieldResult: Sendable {
 }
 
 enum VectorFieldInterpolator {
+    private static let minSupportRadiusMeters = 400.0
+    private static let maxSupportRadiusMeters = 5_000.0
+
     /// IDW over a lat/lon grid. Direction is averaged as unit vectors to avoid
     /// the 0°/360° wrap problem. Confidence falls off when the nearest
     /// contributing measurement is farther than `supportRadiusMeters`.
@@ -32,10 +35,11 @@ enum VectorFieldInterpolator {
         gridSize: Int = 18,
         paddingFraction: Double = 0.12,
         power: Double = 2.0,
-        supportRadiusMeters: Double = 400
+        supportRadiusMeters: Double? = nil
     ) -> VectorFieldResult? {
         let valid = measurements.filter { $0.isValid }
         guard valid.count >= 2 else { return nil }
+        let resolvedSupportRadiusMeters = supportRadiusMeters ?? adaptiveSupportRadiusMeters(for: valid)
 
         let lats = valid.map(\.latitude)
         let lons = valid.map(\.longitude)
@@ -89,7 +93,7 @@ enum VectorFieldInterpolator {
                 var direction = atan2(u, v) * 180.0 / .pi
                 if direction < 0 { direction += 360 }
 
-                let falloff = min(nearest / supportRadiusMeters, 1.0)
+                let falloff = min(nearest / resolvedSupportRadiusMeters, 1.0)
                 let confidence = max(0.0, 1.0 - falloff)
                 if confidence < 0.05 { continue }
 
@@ -108,5 +112,25 @@ enum VectorFieldInterpolator {
             samples: samples,
             minLat: minLat, maxLat: maxLat, minLon: minLon, maxLon: maxLon
         )
+    }
+
+    /// Uses the visible measurement spacing to keep dense sessions local while
+    /// still bridging wider sparse-measurement gaps across the venue.
+    private static func adaptiveSupportRadiusMeters(for measurements: [TideMeasurement]) -> Double {
+        guard measurements.count >= 2 else { return minSupportRadiusMeters }
+
+        let nearestNeighborDistances = measurements.enumerated().compactMap { index, measurement -> Double? in
+            let location = CLLocation(latitude: measurement.latitude, longitude: measurement.longitude)
+            var nearest = Double.infinity
+            for (candidateIndex, candidate) in measurements.enumerated() where candidateIndex != index {
+                let candidateLocation = CLLocation(latitude: candidate.latitude, longitude: candidate.longitude)
+                nearest = min(nearest, location.distance(from: candidateLocation))
+            }
+            return nearest.isFinite ? nearest : nil
+        }.sorted()
+
+        guard !nearestNeighborDistances.isEmpty else { return minSupportRadiusMeters }
+        let medianSpacing = nearestNeighborDistances[nearestNeighborDistances.count / 2]
+        return min(maxSupportRadiusMeters, max(minSupportRadiusMeters, medianSpacing * 2.5))
     }
 }
