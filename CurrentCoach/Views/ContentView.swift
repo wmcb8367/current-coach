@@ -45,31 +45,15 @@ struct ContentView: View {
     @State private var lastMeasurementCount: Int = 0
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            if !auth.isSignedIn { guestUploadNotice }
             if horizontalSizeClass == .regular {
                 iPadLayout
             } else {
                 iPhoneLayout
             }
         }
-        .safeAreaInset(edge: .bottom) {
-            if !auth.isSignedIn {
-                VStack(alignment: .leading, spacing: 4) {
-                    Toggle("Upload current readings to M2X", isOn: Binding(
-                        get: { auth.autoSyncEnabled },
-                        set: { value in Task {
-                            await auth.setAutoSyncEnabled(value)
-                            if value { sync.syncPending() }
-                        } }
-                    ))
-                    .font(.caption)
-                    .padding(.horizontal)
-                    .accessibilityHint("Uploads saved current readings, location and time without an account for M2X analysis. Readings are not public.")
-                    Text("Includes location and time for M2X analysis. Not public.")
-                        .font(.caption2).padding(.horizontal)
-                }
-            }
-        }
+        .background(NT.bgPrimary)
         .task(id: scenePhase) {
             guard scenePhase == .active else { return }
             await auth.refreshPreferences()
@@ -108,6 +92,27 @@ struct ContentView: View {
             sync.syncPending()
         }
     }
+
+    private var guestUploadNotice: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle("Upload current readings to M2X", isOn: Binding(
+                get: { auth.autoSyncEnabled },
+                set: { value in Task {
+                    await auth.setAutoSyncEnabled(value)
+                    if value { sync.syncPending() }
+                } }
+            ))
+            .font(.caption)
+            .padding(.horizontal)
+            .accessibilityHint("Uploads saved current readings, location and time without an account for M2X analysis. Readings are not public.")
+            Text("Includes location and time for M2X analysis. Not public.")
+                .font(.caption2).padding(.horizontal)
+        }
+
+        .padding(.vertical, 8)
+        .background(NT.bgPrimary)
+    }
+
 
     // MARK: - iPhone layout (unchanged TabView)
 

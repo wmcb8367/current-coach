@@ -34,7 +34,7 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         GENERATE_INFOPLIST_FILE: true
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Current Coach uses your location to measure tidal current speed and direction."
+        INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: "Current Coach uses location to measure currents. Saved readings include location and time and upload to M2X for analysis, even without sign-in. Uploads can be switched off."
         INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription: "Current Coach needs background location access to continue measuring tidal current when the app is minimized."
         INFOPLIST_KEY_UIBackgroundModes: "location"
     info:
