@@ -114,3 +114,89 @@ struct BearingCalculationTests {
         #expect(MeasureViewModel.normalizeAngle(360) == 0)
     }
 }
+
+
+private final class GuestUploadProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var handler: (@Sendable (URLRequest) -> (Int, Data))?
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        let (status, data) = Self.handler!(request)
+        let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: data)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+@Suite("Guest upload queue", .serialized)
+@MainActor
+struct GuestUploadTests {
+    @Test("Signed-out uploads preserve invalid readings, batch, deduplicate and respect opt-out")
+    func guestQueue() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [GuestUploadProtocol.self]
+        let api = APIClient(session: URLSession(configuration: config), installationKeyProvider: { String(repeating: "a", count: 64) })
+        let auth = AuthStore(api: api)
+        auth.signOut()
+        let file = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let store = MeasurementStore(fileURL: file)
+        for _ in 0..<101 {
+            store.add(TideMeasurement(id: UUID(), timestamp: Date(), duration: 60,
+                speedMetersPerMinute: 5, fromDirection: 210, latitude: 33, longitude: -118, isValid: false))
+        }
+        let sync = SyncService(api: api, store: store, auth: auth)
+        await auth.setAutoSyncEnabled(false)
+        sync.syncPending()
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(sync.pendingCount == 101)
+        let responseIDs = store.measurements.map { $0.id.uuidString }
+        let counter = GuestRequestCounter()
+        GuestUploadProtocol.handler = { request in
+            let index = counter.increment()
+            #expect(request.url?.path == "/api/current-measurements/guest")
+            #expect(request.value(forHTTPHeaderField: "Authorization") == nil)
+            #expect(request.value(forHTTPHeaderField: "X-Current-Coach-Installation")?.count == 64)
+            let ids = Array(responseIDs.dropFirst(index * 100).prefix(100))
+            let accepted = ids.map { ["id": "server-id", "clientId": $0] }
+            return (200, try! JSONSerialization.data(withJSONObject: ["ok": true, "syncedAt": "2026-11-18T06:00:00.000Z", "accepted": accepted]))
+        }
+        await auth.setAutoSyncEnabled(true)
+        sync.syncPending()
+        for _ in 0..<200 { if sync.pendingCount == 0 { break }; try await Task.sleep(for: .milliseconds(10)) }
+        #expect(sync.pendingCount == 0)
+        #expect(counter.value == 2)
+        #expect(MeasurementStore(fileURL: file).measurements.allSatisfy { $0.syncedAt != nil })
+        sync.syncPending()
+        try await Task.sleep(for: .milliseconds(30))
+        #expect(counter.value == 2)
+    }
+
+    @Test("Failed unsigned-in upload remains persisted for retry")
+    func failureRetainsQueue() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [GuestUploadProtocol.self]
+        let api = APIClient(session: URLSession(configuration: config), installationKeyProvider: { String(repeating: "a", count: 64) })
+        let auth = AuthStore(api: api); auth.signOut(); await auth.setAutoSyncEnabled(true)
+        let file = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString + ".json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let store = MeasurementStore(fileURL: file)
+        store.add(TideMeasurement(id: UUID(), timestamp: Date(), duration: 60,
+            speedMetersPerMinute: 5, fromDirection: 210, latitude: 33, longitude: -118, isValid: true))
+        GuestUploadProtocol.handler = { _ in (503, Data("{\"ok\":false,\"error\":\"offline\"}".utf8)) }
+        let sync = SyncService(api: api, store: store, auth: auth); sync.syncPending()
+        for _ in 0..<200 { if sync.lastError != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
+        #expect(sync.lastError == "offline")
+        #expect(sync.pendingCount == 1)
+        #expect(MeasurementStore(fileURL: file).measurements.first?.syncedAt == nil)
+    }
+}
+
+private final class GuestRequestCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    func increment() -> Int { lock.lock(); defer { lock.unlock() }; let prior = count; count += 1; return prior }
+    var value: Int { lock.lock(); defer { lock.unlock() }; return count }
+}

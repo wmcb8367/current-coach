@@ -94,7 +94,11 @@ final class AuthStore {
     /// revert on failure. Either way the final local value matches the
     /// server's authoritative response.
     func setAutoSyncEnabled(_ value: Bool) async {
-        guard let token else { return }
+        guard let token else {
+            autoSyncEnabled = value
+            UserDefaults.standard.set(value, forKey: Key.autoSyncCache)
+            return
+        }
         let previous = autoSyncEnabled
         autoSyncEnabled = value
         isUpdatingPreference = true

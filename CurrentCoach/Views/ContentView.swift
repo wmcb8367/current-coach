@@ -52,19 +52,51 @@ struct ContentView: View {
                 iPhoneLayout
             }
         }
+        .safeAreaInset(edge: .bottom) {
+            if !auth.isSignedIn {
+                VStack(alignment: .leading, spacing: 4) {
+                    Toggle("Upload current readings to M2X", isOn: Binding(
+                        get: { auth.autoSyncEnabled },
+                        set: { value in Task {
+                            await auth.setAutoSyncEnabled(value)
+                            if value { sync.syncPending() }
+                        } }
+                    ))
+                    .font(.caption)
+                    .padding(.horizontal)
+                    .accessibilityHint("Uploads saved current readings, location and time without an account for M2X analysis. Readings are not public.")
+                    Text("Includes location and time for M2X analysis. Not public.")
+                        .font(.caption2).padding(.horizontal)
+                }
+            }
+        }
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            await auth.refreshPreferences()
+            sync.syncPending()
+            // Retry offline queues while active; local storage survives suspension/restart.
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+                sync.syncPending()
+            }
+        }
         .onChange(of: selectedTab) { _, newTab in
             if newTab != .map { mapFocus = nil }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                Task { await auth.refreshPreferences() }
-                sync.syncPending()
+                Task {
+                    await auth.refreshPreferences()
+                    sync.syncPending()
+                }
             }
         }
         .onChange(of: auth.isSignedIn) { _, signedIn in
             if signedIn {
-                Task { await auth.refreshPreferences() }
-                sync.syncPending()
+                Task {
+                    await auth.refreshPreferences()
+                    sync.syncPending()
+                }
             }
         }
         .onChange(of: store.measurements.count) { old, new in

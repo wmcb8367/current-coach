@@ -5,12 +5,11 @@ import Foundation
 final class MeasurementStore {
     private(set) var measurements: [TideMeasurement] = []
 
-    private let fileURL: URL = {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return docs.appending(path: "measurements.json")
-    }()
+    private let fileURL: URL
 
-    init() {
+    init(fileURL: URL? = nil) {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        self.fileURL = fileURL ?? docs.appending(path: "measurements.json")
         load()
     }
 

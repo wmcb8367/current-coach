@@ -69,11 +69,13 @@ final class APIClient {
         return URL(string: "https://m2xsailing.com")!
     }
 
+    private let installationKeyProvider: (() throws -> String)?
     private let session: URLSession
     private let decoder: JSONDecoder
     private let encoder: JSONEncoder
 
-    init(session: URLSession = .shared) {
+    init(session: URLSession = .shared, installationKeyProvider: (() throws -> String)? = nil) {
+        self.installationKeyProvider = installationKeyProvider
         self.session = session
 
         self.decoder = JSONDecoder()
@@ -129,6 +131,24 @@ final class APIClient {
         return try await send(path: "/api/current-measurements", method: "POST", body: data, token: token)
     }
 
+    /// Guest uploads use a random Keychain installation key, never a hardware ID.
+    func syncGuestMeasurements(_ items: [SyncRequestItem]) async throws -> SyncResponse {
+        let account = "guest-upload-installation"
+        var key = try installationKeyProvider?() ?? KeychainStore.get(account)
+        if key == nil {
+            let generated = (UUID().uuidString + UUID().uuidString)
+                .replacingOccurrences(of: "-", with: "").lowercased()
+            KeychainStore.set(generated, account: account)
+            key = KeychainStore.get(account)
+        }
+        guard let key else {
+            throw APIError.server(status: 0, message: "Could not securely save the upload identity. Readings remain on this device.")
+        }
+        let data = try encoder.encode(["measurements": items])
+        return try await send(path: "/api/current-measurements/guest", method: "POST",
+                              body: data, token: nil, installationKey: key)
+    }
+
     // MARK: - Preferences
 
     func fetchPreferences(token: String) async throws -> Preferences {
@@ -161,13 +181,14 @@ final class APIClient {
         return try await send(path: path, method: "POST", body: data, token: nil)
     }
 
-    private func send<T: Decodable>(path: String, method: String, body: Data?, token: String?) async throws -> T {
+    private func send<T: Decodable>(path: String, method: String, body: Data?, token: String?, installationKey: String? = nil) async throws -> T {
         guard let url = URL(string: path, relativeTo: baseURL) else { throw APIError.badURL }
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let installationKey { req.setValue(installationKey, forHTTPHeaderField: "X-Current-Coach-Installation") }
         if let body { req.httpBody = body }
 
         let (data, response): (Data, URLResponse)

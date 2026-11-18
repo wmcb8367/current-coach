@@ -8,7 +8,7 @@ final class SyncService {
     private(set) var lastError: String?
 
     var pendingCount: Int {
-        store.measurements.filter { $0.syncedAt == nil && $0.isValid }.count
+        store.measurements.filter { $0.syncedAt == nil }.count
     }
 
     private let api: APIClient
@@ -22,14 +22,21 @@ final class SyncService {
         self.auth = auth
     }
 
-    /// Uploads any unsynced, valid measurements if the user is signed in.
+    /// Uploads saved measurements (including quality flags) without requiring sign-in.
     /// Safe to call repeatedly; re-entry is coalesced.
     func syncPending() {
-        guard auth.isSignedIn, let token = auth.token else { return }
+        guard auth.autoSyncEnabled else { return }
+        let token = auth.isSignedIn ? auth.token : nil
         if currentTask != nil { return }
         currentTask = Task { [weak self] in
-            await self?.performSync(token: token)
-            self?.currentTask = nil
+            guard let self else { return }
+            // Drain batches, including readings captured during an in-flight upload.
+            while self.auth.autoSyncEnabled && self.auth.token == token && self.pendingCount > 0 {
+                let before = self.pendingCount
+                await self.performSync(token: token)
+                if self.lastError != nil || self.pendingCount >= before { break }
+            }
+            self.currentTask = nil
         }
     }
 
@@ -39,8 +46,8 @@ final class SyncService {
         syncPending()
     }
 
-    private func performSync(token: String) async {
-        let pending = store.measurements.filter { $0.syncedAt == nil && $0.isValid }
+    private func performSync(token: String?) async {
+        let pending = Array(store.measurements.filter { $0.syncedAt == nil }.prefix(100))
         guard !pending.isEmpty else { return }
 
         isSyncing = true
@@ -63,7 +70,12 @@ final class SyncService {
         }
 
         do {
-            let response = try await api.syncCurrentMeasurements(items, token: token)
+            let response: SyncResponse
+            if let token {
+                response = try await api.syncCurrentMeasurements(items, token: token)
+            } else {
+                response = try await api.syncGuestMeasurements(items)
+            }
             let accepted = Set(response.accepted.compactMap { UUID(uuidString: $0.clientId) })
             store.markSynced(ids: accepted, at: response.syncedAt)
             lastSyncedAt = response.syncedAt
@@ -71,7 +83,8 @@ final class SyncService {
             lastError = error.errorDescription
             switch error {
             case .notAuthenticated:
-                auth.signOut()
+                // Do not silently downgrade an expired account session to guest uploads.
+                break
             case .server(let status, _) where status == 403:
                 // Server says this account has sync disabled — refresh our
                 // local preference so the UI toggle matches reality.

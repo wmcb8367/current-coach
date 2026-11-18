@@ -25,6 +25,10 @@ struct AccountView: View {
                 if auth.isSignedIn {
                     SignedInView(auth: auth, sync: sync)
                 } else {
+                    Text("Saved current readings, location and time upload automatically to M2X for analysis, even without an account. They are not public. You can turn uploads off on the main screen. Offline readings upload when the app is open and connectivity returns.")
+                        .font(.caption)
+                        .foregroundStyle(NT.textSecondary)
+                        .padding(.horizontal)
                     SignInForm(auth: auth)
                 }
 
@@ -207,7 +211,7 @@ private struct SignInForm: View {
                 Text("Wind Analytics")
                     .eyebrow(NT.accentTealSoft)
                 Text(mode == .signIn
-                     ? "Sign in to sync your current measurements."
+                     ? "Sign in to view uploaded readings in your personal M2X library."
                      : "Create an m2x account — works on web and iOS.")
                     .font(.subheadline)
                     .foregroundStyle(NT.textDim)
