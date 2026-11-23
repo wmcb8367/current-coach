@@ -39,7 +39,11 @@ def parse_args(argv=None):
     p.add_argument("--keep-invalid", action="store_true", help="keep rows whose is_valid column is false")
     p.add_argument("--theme", choices=sorted(THEMES), default="sailboss",
                    help="sailboss (default, the Luther current-readings look) or m2x (Current Coach app colours)")
-    p.add_argument("--units", choices=["kt", "m/min"], default="kt", help="speed units shown on slides (default kt)")
+    p.add_argument("--units", default="m/min", type=lambda v: {"kt": "kt", "kts": "kt", "knots": "kt", "knot": "kt",
+                   "m/min": "m/min", "mmin": "m/min", "m-min": "m/min", "mpm": "m/min"}.get(v.strip().lower(), v),
+                   choices=["m/min", "kt"],
+                   help="speed units shown on the slides: m/min (default) or kt. Input files can be in either; "
+                        "they are converted.")
     p.add_argument("--scale-max", type=float,
                    help="speed at the top of the colour gradient, in display units (default: strongest reading rounded up)")
     p.add_argument("--land", default="auto",

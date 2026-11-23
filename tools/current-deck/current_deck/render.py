@@ -45,6 +45,10 @@ class Units:
         v = kt * self.factor
         return f"{v:.2f} kt" if self.name == "kt" else f"{v:.1f} m/min"
 
+    def num(self, kt: float) -> str:
+        """Value only, for map labels; the unit is on the key."""
+        return self.fmt(kt).split(" ")[0]
+
     def frac(self, kt: float) -> float:
         return min(max(kt / self.vmax_kt, 0.0), 1.0)
 
@@ -245,7 +249,7 @@ def legend(ax, th: Theme, units: Units, fs=1.0):
     pill.set_boxstyle("round", pad=h * ratio / 2, rounding_size=h * ratio / 2)
     pill.set_mutation_aspect(1 / ratio)
     ax.add_patch(pill)
-    lead = 0.17           # share of the bar before the 0 tick, holding the unit label
+    lead = 0.11 + 0.035 * len(units.name)     # share of the bar before the 0 tick, holding the unit label
     n = 120
     for i in range(n):
         t = i / (n - 1)
@@ -420,7 +424,7 @@ def render_hour_panels(ms_hour, all_ms, zoom: MapFrame, loc: MapFrame, th: Theme
     ghost_dots(axr, zoom, th, [m for m in all_ms if m not in ms_hour])
     placer = make_placer(axr, zoom, ms_hour)
     for m in ms_hour:
-        draw_reading(axr, zoom, th, m, units, 1.0, label=f"{m.t:%H:%M} · {units.fmt(m.speed_kt)}", placer=placer)
+        draw_reading(axr, zoom, th, m, units, 1.0, label=f"{m.t:%H:%M} · {units.num(m.speed_kt)}", placer=placer)
     legend(axr, th, units)
     scale_bar(axr, zoom, th)
     fig.savefig(path, facecolor=th.page)
@@ -580,7 +584,7 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
                 placer.add_segment(dot, dot)
         for m, al in sorted(shown, key=lambda p: p[0].t):
             dyn += draw_reading(axr, zoom, th, m, units, al, placer=placer, fs=fs, arrow=field is None,
-                                label=f"{m.t:%H:%M} · {units.fmt(m.speed_kt)}")
+                                label=f"{m.t:%H:%M} · {units.num(m.speed_kt)}")
         x = i * step_min
         dyn += axs.plot([0, x], [0.25, 0.25], color=th.wordmark, lw=6, solid_capstyle="round", zorder=4)
         dyn.append(axs.scatter([x], [0.25], s=170, color=th.wordmark, edgecolors=th.page, linewidths=2, zorder=5))

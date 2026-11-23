@@ -4,9 +4,11 @@ Turns current-measurement CSVs (Current Coach app exports, coach-boat logs, or a
 
 1. **Slide 1, an animated GIF time scrubber.** Each current arrow appears at its reading time and fades out an hour later, while a playhead runs along a timeline of the day.
 2. **Slide 2, the all-day average.** A looping particle view of every reading of the day averaged together.
-3. **One slide per hour of the day** (venue local time). Each has a locator map with the race area boxed and a zoomed map of that hour's readings. Arrows are coloured on one continuous strength gradient (periwinkle and blue for weak, through green and yellow, to orange and magenta for strong, shown in a slim key on the map) and labelled `HH:MM · speed`. Every arrow keeps a visible tail: length is a fixed base plus an amount proportional to speed.
+3. **One slide per hour of the day** (venue local time). Each has a locator map with the race area boxed and a zoomed map of that hour's readings. Arrows are coloured on one continuous strength gradient (periwinkle and blue for weak, through green and yellow, to orange and magenta for strong, shown in a slim key on the map) and labelled `HH:MM · speed` (the unit is on the key). Every arrow keeps a visible tail: length is a fixed base plus an amount proportional to speed.
 
 The look copies the SailBoss current-readings slide made for Luther's coach boat (black page, dark green map panels, cyan kicker, lime wordmark, white-dotted arrows). Pass `--theme m2x` to use the Current Coach app colours instead.
+
+Speeds are reported in **metres per minute** by default, whatever units the input file uses. Pass `--units kt` for knots.
 
 Arrows always point **the way the water flows** (set, degrees true). Files that give "from" directions are flipped (toward = from + 180).
 
@@ -118,7 +120,7 @@ Times with no date (such as `10:45` in a coach log) take the date in the file na
 --date YYYY-MM-DD       date for files whose times have no date
 --map FIELD=COLUMN      force a column (repeatable)
 --theme sailboss|m2x    SailBoss (default) or Current Coach app colours
---units kt|m/min        speed units on the slides (default kt; the Current Coach app works in m/min)
+--units m/min|kt        speed units on the slides (default m/min, like the Current Coach app; input in knots is converted)
 --scale-max N           speed at the top of the colour gradient (default: strongest reading rounded up)
 --land auto|gshhg|naturalearth|none|FILE   coastline source (see Coastline below)
 --gif-style arrows|particles   slide-1 animation style (default arrows)
