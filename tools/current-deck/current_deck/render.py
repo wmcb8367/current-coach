@@ -437,6 +437,38 @@ def fade_alpha(age_min: float, lifetime: float, fade: float) -> float:
     return max(0.0, (lifetime - age_min) / fade)
 
 
+def parse_window(text) -> float:
+    """'90', '90m', '3h', '1h30m' -> minutes; 'all' / 'day' -> infinity (readings never expire)."""
+    import re
+    t = str(text).strip().lower()
+    if t in ("all", "day", "all-day", "allday", "forever", "inf"):
+        return math.inf
+    m = re.fullmatch(r"(?:(\d+(?:\.\d+)?)\s*h(?:ours?|rs?)?)?\s*(?:(\d+(?:\.\d+)?)\s*(?:m|min|mins|minutes)?)?", t)
+    if not m or not (m[1] or m[2]):
+        raise ValueError(f"cannot read a time window from {text!r}; use minutes (90), 90m, 3h, 1h30m or all")
+    minutes = float(m[1] or 0) * 60 + float(m[2] or 0)
+    if minutes <= 0:
+        raise ValueError("the time window must be longer than zero")
+    return minutes
+
+
+def parse_distance(text) -> float:
+    """'800', '800m', '1.5km', '0.5nm' -> metres."""
+    import re
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(m|km|nm|nmi|mi)?", str(text).strip().lower())
+    if not m or float(m[1]) <= 0:
+        raise ValueError(f"cannot read a distance from {text!r}; use metres (800), 800m, 1.5km or 0.5nm")
+    return float(m[1]) * {"m": 1.0, "km": 1000.0, "nm": M_PER_NM, "nmi": M_PER_NM, "mi": 1609.344}[m[2] or "m"]
+
+
+def fmt_window(minutes: float) -> str:
+    if math.isinf(minutes):
+        return "all day"
+    if minutes >= 120 and minutes % 30 == 0:
+        return f"{minutes / 60:g} h"
+    return f"{minutes:g} min"
+
+
 def _floor(dt: datetime, minutes: int) -> datetime:
     dt = dt.replace(second=0, microsecond=0)
     return dt - timedelta(minutes=dt.minute % minutes)
@@ -462,7 +494,7 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
     """
     register_fonts()
     t_start = _floor(ms[0].t - timedelta(minutes=5), 5)
-    t_end = ms[-1].t + timedelta(minutes=lifetime)
+    t_end = ms[-1].t + timedelta(minutes=30 if math.isinf(lifetime) else lifetime)
     span_min = (t_end - t_start).total_seconds() / 60
     if step_min is None:
         step_min = max(1.0, round(span_min / 150))
@@ -492,6 +524,11 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
     reach_txt = f"{reach_m / 1000:g} km" if reach_m >= 1000 else f"{reach_m:g} m"
     foot = (f"{zone_label} · flow shown only within {reach_txt} of a reading" if style == "particles"
             else f"{zone_label} · arrows fade out {lifetime:g} min after each reading")
+    if math.isinf(lifetime):
+        foot = (f"{zone_label} · readings stay all day · reach {reach_txt}" if style == "particles"
+                else f"{zone_label} · arrows stay for the rest of the day")
+    elif style == "particles":
+        foot = f"{zone_label} · readings stay {fmt_window(lifetime)} · reach {reach_txt}"
     axc.text(0.06, 0.14, foot,
              transform=axc.transAxes, color=th.muted, fontsize=9.5, fontfamily=th.mono, va="center")
 
@@ -520,7 +557,7 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
 
     field = None
     if style == "particles":
-        fade = min(fade, lifetime / 6)      # particles hold full strength longer, then ease out
+        fade = min(fade, lifetime / 6) if not math.isinf(lifetime) else fade
         from .particles import ParticleField, reach_outline
         field = ParticleField(zoom, units, reach_m=reach_m, n=particles)
     dyn, frames = [], []
@@ -559,13 +596,82 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
     plt.close(fig)
     _save_gif(frames, path, frame_ms)
     info = {"frames": n, "step_min": round(step_min, 2), "start": t_start.isoformat(), "end": t_end.isoformat(),
-            "style": style}
+            "style": style, "lifetime_min": None if math.isinf(lifetime) else lifetime}
     if style == "particles":
         info["reach_m"] = reach_m
     return info
 
 
-def _save_gif(frames, path, frame_ms):
+def render_average_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: str, title: str,
+                       zone_label: str, zoom: MapFrame, land, reach_m: float = 1000.0, frames_n: int = 70,
+                       frame_ms: int = 90, scale: float = 0.96, particles: int = 2400):
+    """Looping particle view of the whole day: every reading counts for the whole animation.
+
+    Where readings overlap, the flow is their distance-weighted average. Same bounded reach as
+    the scrubber, so nothing is drawn where nothing was measured.
+    """
+    from .particles import ParticleField, reach_outline
+    register_fonts()
+    fig = plt.figure(figsize=(SW * scale, SH * scale), dpi=100, facecolor=th.page)
+    fs = scale
+    header(fig, th, kicker, title)
+    box = (LEFT_PANEL[0], LEFT_PANEL[1], LEFT_PANEL[2], 3.05)
+    loc = locator_frame(zoom, box[2] / box[3])
+    axl = _axes(fig, box)
+    draw_panel(axl, loc, th, land)
+    race_box(axl, zoom, loc, th, fs)
+    north_arrow(axl, th, fs, x=0.07, y=0.82)
+    scale_bar(axl, loc, th, fs)
+
+    axc = _axes(fig, (LEFT_PANEL[0], 4.85, LEFT_PANEL[2], 1.75))
+    axc.set_facecolor(th.box)
+    axc.set_xticks([])
+    axc.set_yticks([])
+    for sp in axc.spines.values():
+        sp.set_color(th.border)
+        sp.set_linewidth(1.6)
+    mean = sum(m.speed_kt for m in ms) / len(ms)
+    reach_txt = f"{reach_m / 1000:g} km" if reach_m >= 1000 else f"{reach_m:g} m"
+    kw = dict(transform=axc.transAxes, fontfamily=th.mono, va="center")
+    axc.text(0.06, 0.84, "ALL-DAY AVERAGE", color=th.kicker, fontsize=12, fontweight="bold", **kw)
+    axc.text(0.06, 0.52, f"{ms[0].t:%H:%M} to {ms[-1].t:%H:%M}", transform=axc.transAxes, color=th.text,
+             fontsize=30, fontfamily=th.sans, fontweight="bold", va="center")
+    axc.text(0.06, 0.27, f"{len(ms)} readings · mean {units.fmt(mean)}", color=th.text, fontsize=11.5, **kw)
+    axc.text(0.06, 0.12, f"{zone_label} · flow shown only within {reach_txt} of a reading", color=th.muted,
+             fontsize=9.5, **kw)
+
+    axr = _axes(fig, RIGHT_PANEL)
+    draw_panel(axr, zoom, th, land)
+    legend(axr, th, units, fs)
+    scale_bar(axr, zoom, th, fs)
+    shown = [(m, 1.0) for m in ms]
+    reach_outline(axr, zoom, shown, reach_m / M_PER_NM, th.muted, fs)
+    xs, ys = zip(*[zoom.xy(m.lat, m.lon) for m in ms])
+    axr.scatter(xs, ys, s=34 * fs, color="#FFFFFF", edgecolors=th.panel, linewidths=1.2 * fs, zorder=6)
+
+    fig.text(SCRUBBER[0] / SW, 1 - (SCRUBBER[1] + 0.2) / SH,
+             "Every reading of the day at once. Where readings overlap, speed and direction are averaged, "
+             "whatever the time between them.", color=th.faint, fontsize=11, fontfamily=th.mono, va="center")
+
+    field = ParticleField(zoom, units, reach_m=reach_m, n=particles)
+    for _ in range(field.life):          # warm up so the first frame is already full
+        field.step(shown)
+    frames, lc = [], None
+    for _ in range(frames_n):
+        if lc is not None:
+            lc.remove()
+        field.step(shown)
+        lc = field.draw(axr, fs)
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", facecolor=th.page)
+        buf.seek(0)
+        frames.append(Image.open(buf).convert("RGB"))
+    plt.close(fig)
+    _save_gif(frames, path, frame_ms, hold=False)
+    return {"frames": frames_n, "readings": len(ms), "reach_m": reach_m}
+
+
+def _save_gif(frames, path, frame_ms, hold: bool = True):
     # One shared palette, built from a sample of frames, keeps colours stable between frames.
     sample = frames[:: max(1, len(frames) // 8)]
     w, h = sample[0].size
@@ -575,6 +681,7 @@ def _save_gif(frames, path, frame_ms):
     pal = sheet.quantize(colors=255, method=Image.Quantize.MEDIANCUT)
     q = [im.quantize(palette=pal, dither=Image.Dither.NONE) for im in frames]
     durations = [frame_ms] * len(q)
-    durations[0] = 700
-    durations[-1] = 2500
+    if hold:
+        durations[0] = 700
+        durations[-1] = 2500
     q[0].save(path, save_all=True, append_images=q[1:], duration=durations, loop=0, optimize=False, disposal=1)

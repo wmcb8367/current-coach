@@ -72,7 +72,7 @@ def test_end_to_end(tmp_path, capsys):
                "-o", str(out), "--land", "none", "--step", "5", "--json"])
     assert rc == 0
     summary = json.loads(capsys.readouterr().out)
-    assert summary["slides"] == 1 + 3                       # GIF + hours 10, 11, 12
+    assert summary["slides"] == 2 + 3                       # scrubber + day average + hours 10, 11, 12
     assert summary["hours"] == ["2026-11-20 10:00", "2026-11-20 11:00", "2026-11-20 12:00"]
     with zipfile.ZipFile(out) as z:
         assert any(n.endswith(".gif") for n in z.namelist())
@@ -128,3 +128,31 @@ def test_particle_gif(tmp_path, capsys):
     assert rc == 0
     info = json.loads(capsys.readouterr().out)["gif_info"]
     assert info["style"] == "particles" and info["reach_m"] == 800
+
+
+def test_parse_window():
+    import math
+    from current_deck.render import fmt_window, parse_window
+    assert parse_window("90") == 90 and parse_window("90m") == 90 and parse_window("3h") == 180
+    assert parse_window("1h30m") == 90 and math.isinf(parse_window("all"))
+    assert fade_alpha(600, math.inf, 20) == 1 and fade_alpha(-1, math.inf, 20) == 0
+    assert fmt_window(180) == "3 h" and fmt_window(math.inf) == "all day"
+    with pytest.raises(ValueError):
+        parse_window("soon")
+
+
+def test_lifetime_all_and_no_average(tmp_path, capsys):
+    out = tmp_path / "deck.pptx"
+    rc = main([str(EX / "coach_log_2026_11_20.csv"), "-o", str(out), "--land", "none", "--step", "10",
+               "--lifetime", "all", "--no-day-average", "--json"])
+    assert rc == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["slides"] == 1 + 3 and summary["gif_info"]["lifetime_min"] is None
+
+
+def test_parse_distance():
+    from current_deck.render import parse_distance
+    assert parse_distance("800") == 800 and parse_distance("1.5km") == 1500
+    assert parse_distance("0.5nm") == pytest.approx(926)
+    with pytest.raises(ValueError):
+        parse_distance("far")

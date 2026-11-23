@@ -13,7 +13,7 @@ from . import __version__
 from .deck import build_deck, hour_groups
 from .loader import load_csv, zone_label
 from .land import load_land
-from .render import LEFT_PANEL, RIGHT_PANEL, build_frame, locator_frame, make_units, render_gif, render_hour_panels
+from .render import LEFT_PANEL, RIGHT_PANEL, build_frame, locator_frame, fmt_window, make_units, parse_distance, parse_window, render_average_gif, render_gif, render_hour_panels
 from .style import THEMES
 
 FIELDS = "time, lat, lon, speed, toward, from, direction, note, group, valid, wind_from, wind_speed"
@@ -49,11 +49,16 @@ def parse_args(argv=None):
     p.add_argument("--gif-style", choices=["arrows", "particles"], default="arrows",
                    help="slide-1 animation: one arrow per reading (default), or drifting particles through a "
                         "field interpolated between nearby readings")
-    p.add_argument("--reach", type=float, default=1000.0, metavar="METERS",
-                   help="particles only: how far from a reading its current may be shown (default 1000 m). "
-                        "Nothing is drawn beyond this distance from every live reading.")
-    p.add_argument("--lifetime", type=float,
-                   help="minutes a reading stays on the GIF (default 60 for arrows, 180 for particles)")
+    p.add_argument("--reach", default="1000m", metavar="DISTANCE",
+                   help="how far from a reading its current may be shown in the particle views: metres (800), "
+                        "800m, 1.5km or 0.5nm (default 1000m). Nothing is drawn beyond this distance from every "
+                        "live reading. Smaller is stricter; larger joins readings into a wider field.")
+    p.add_argument("--lifetime", "--window", dest="lifetime", metavar="TIME",
+                   help="how long a reading stays relevant on the scrubber: minutes (90), 90m, 3h, 1h30m, or "
+                        "'all' to keep every reading for the rest of the day (default 60m for arrows, 3h for particles)")
+    p.add_argument("--day-average", action=argparse.BooleanOptionalAction, default=True,
+                   help="add a slide with a looping particle view of all the day's readings averaged together "
+                        "(default on; --no-day-average to skip)")
     p.add_argument("--fade", type=float, default=20, help="minutes of fade-out at the end of its life (default 20)")
     p.add_argument("--step", type=float, help="GIF minutes per frame (default: about 150 frames)")
     p.add_argument("--frame-ms", type=int, default=90, help="GIF milliseconds per frame (default 90)")
@@ -102,16 +107,21 @@ def main(argv=None) -> int:
     assets.mkdir(parents=True, exist_ok=True)
     out.parent.mkdir(parents=True, exist_ok=True)
     th = THEMES[a.theme]
-    if a.lifetime is None:
-        a.lifetime = 180.0 if a.gif_style == "particles" else 60.0
+    try:
+        a.lifetime = parse_window(a.lifetime) if a.lifetime is not None else \
+            (180.0 if a.gif_style == "particles" else 60.0)
+    except ValueError as e:
+        sys.exit(f"--lifetime: {e}")
 
     units = make_units(a.units, th.strength, max(m.speed_kt for m in ms), a.scale_max)
     kicker = a.kicker or (f"{days[0].day} {days[0]:%B} · current readings" if len(days) == 1 else "current readings")
     if len(days) > 1:
         sys.stderr.write("note: readings span more than one day; hourly slides are per calendar hour.\n")
 
-    if a.reach <= 0:
-        sys.exit("--reach must be a positive distance in metres")
+    try:
+        a.reach = parse_distance(a.reach)
+    except ValueError as e:
+        sys.exit(f"--reach: {e}")
     zoom = build_frame(ms, RIGHT_PANEL[2] / RIGHT_PANEL[3])
     loc = locator_frame(zoom, LEFT_PANEL[2] / LEFT_PANEL[3])
     land, land_note, land_src = load_land(locator_frame(zoom, 1.0, factor=6).bbox_lonlat(0.2), a.land)
@@ -124,6 +134,12 @@ def main(argv=None) -> int:
                        lifetime=a.lifetime, fade=a.fade, step_min=a.step, frame_ms=a.frame_ms,
                        style=a.gif_style, reach_m=a.reach)
 
+    avg, avg_info = None, None
+    if a.day_average:
+        avg = assets / "day_average.gif"
+        avg_info = render_average_gif(ms, th, units, avg, kicker=kicker, title=title, zone_label=zl, zoom=zoom,
+                                      land=land, reach_m=a.reach, frame_ms=a.frame_ms)
+
     panels = {}
     for hour, group in hour_groups(ms):
         pth = assets / f"hour_{hour:%Y%m%d_%H}.png"
@@ -132,13 +148,13 @@ def main(argv=None) -> int:
 
     n_slides = build_deck(out, th=th, units=units, gif_path=gif, hour_panels=panels, ms=ms, title=title,
                           kicker=kicker, zone_label=zl, sources=[Path(p).name for p in a.csv],
-                          lifetime=a.lifetime)
+                          lifetime=a.lifetime, average_gif=avg, lifetime_label=fmt_window(a.lifetime))
 
     summary = {
         "deck": str(out), "gif": str(gif), "assets_dir": str(assets), "slides": n_slides,
-        "timezone": zone, "readings_used": len(ms), "units": units.name, "land_source": land_src, "land_polygons": len(land),
+        "timezone": zone, "reach_m": a.reach, "readings_used": len(ms), "units": units.name, "land_source": land_src, "land_polygons": len(land),
         "hours": [f"{h:%Y-%m-%d %H}:00" for h, _ in hour_groups(ms)],
-        "gif_info": ginfo,
+        "gif_info": ginfo, "day_average_gif": str(avg) if avg else None, "day_average_info": avg_info,
         "inputs": [{"file": r.path, "rows": r.rows, "used": r.used, "skipped": r.skipped,
                     "time_column": r.time_column, "columns": r.columns, "notes": r.notes} for r in reports],
     }

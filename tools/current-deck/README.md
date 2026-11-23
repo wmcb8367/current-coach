@@ -3,7 +3,8 @@
 Turns current-measurement CSVs (Current Coach app exports, coach-boat logs, or anything similar) into a slide deck:
 
 1. **Slide 1, an animated GIF time scrubber.** Each current arrow appears at its reading time and fades out an hour later, while a playhead runs along a timeline of the day.
-2. **One slide per hour of the day** (venue local time). Each has a locator map with the race area boxed and a zoomed map of that hour's readings. Arrows are coloured on one continuous strength gradient (periwinkle and blue for weak, through green and yellow, to orange and magenta for strong, shown in a slim key on the map) and labelled `HH:MM · speed`. Every arrow keeps a visible tail: length is a fixed base plus an amount proportional to speed.
+2. **Slide 2, the all-day average.** A looping particle view of every reading of the day averaged together.
+3. **One slide per hour of the day** (venue local time). Each has a locator map with the race area boxed and a zoomed map of that hour's readings. Arrows are coloured on one continuous strength gradient (periwinkle and blue for weak, through green and yellow, to orange and magenta for strong, shown in a slim key on the map) and labelled `HH:MM · speed`. Every arrow keeps a visible tail: length is a fixed base plus an amount proportional to speed.
 
 The look copies the SailBoss current-readings slide made for Luther's coach boat (black page, dark green map panels, cyan kicker, lime wordmark, white-dotted arrows). Pass `--theme m2x` to use the Current Coach app colours instead.
 
@@ -22,6 +23,7 @@ This writes:
 
 - `out/readings.pptx`: the deck, with the GIF on slide 1 and per-reading detail in each slide's speaker notes
 - `out/readings_assets/scrubber.gif`: the animation on its own
+- `out/readings_assets/day_average.gif`: the all-day average animation
 - `out/readings_assets/hour_YYYYMMDD_HH.png`: the map panels for each hour
 
 It also prints a JSON summary on stdout (deck path, slide count, time zone, rows used and skipped per file, and which column was used for each field). Progress notes go to stderr. Add `--json` to print only the JSON.
@@ -37,13 +39,35 @@ Python 3.11 or newer. IBM Plex fonts are bundled for the images. The deck's text
 - The coastline comes from the `basemap-data-hires` package in `requirements.txt`, so install the requirements first. `land_source` in the JSON says which coastline was used. See Coastline below.
 - Rendering takes about 10 to 30 seconds, mostly for the GIF. Use `--step 5` for a quicker, choppier GIF.
 
+## The two dials
+
+These two settings control how much the particle views are allowed to infer. Both take plain values.
+
+| Setting | What it does | Examples |
+|---|---|---|
+| `--lifetime` (or `--window`) | How long a reading stays relevant on the scrubber after it was taken | `--lifetime 45m`, `--lifetime 3h`, `--lifetime all` (never expires) |
+| `--reach` | How far from a reading its current may be shown | `--reach 500m`, `--reach 2km`, `--reach 0.5nm` |
+
+Smaller values are stricter and show only what was measured there and then. Larger values join readings into a wider, longer-lived field, at the cost of blending readings taken further apart in space or time.
+
+```bash
+# strict: each reading counts for 45 minutes within 500 m
+python3 -m current_deck day1.csv --gif-style particles --lifetime 45m --reach 500m -o strict.pptx
+# generous: readings stay for the rest of the day and reach 2 km
+python3 -m current_deck day1.csv --gif-style particles --lifetime all --reach 2km -o generous.pptx
+```
+
+## All-day average slide
+
+Slide 2 is a looping particle view of every reading of the day at once (`day_average.gif` in the assets folder). Where readings overlap, speed and direction are averaged, whatever the time between them, so it shows the day's typical flow and hides how the tide changed. `--reach` applies here too. `--no-day-average` leaves the slide out.
+
 ## Particle animation
 
 `--gif-style particles` swaps the arrows on slide 1 for drifting particles with trails, in the manner of a weather-map wind layer. The hourly slides still use arrows.
 
 The particles follow a field interpolated from the readings that are live at that moment on the scrubber. It is deliberately conservative so it doesn't suggest measurements that were never taken:
 
-- A reading only affects water within `--reach` metres of where it was taken (default 1000). Its weight falls smoothly to zero at that distance.
+- A reading only affects water within `--reach` of where it was taken (default 1000 m). Its weight falls smoothly to zero at that distance.
 - Beyond the reach of every live reading nothing is drawn. A faint dotted circle marks each reading's reach.
 - Where the reaches of two or more live readings overlap, speed is the weighted mean and direction is the weighted mean of unit vectors (so 350° and 010° average to 000°).
 - A reading stops contributing when it fades off the scrubber (`--lifetime`, `--fade`).
@@ -98,8 +122,9 @@ Times with no date (such as `10:45` in a coach log) take the date in the file na
 --scale-max N           speed at the top of the colour gradient (default: strongest reading rounded up)
 --land auto|gshhg|naturalearth|none|FILE   coastline source (see Coastline below)
 --gif-style arrows|particles   slide-1 animation style (default arrows)
---reach METERS          particles only: how far a reading's current may be shown (default 1000)
---lifetime MIN          minutes a reading stays on the GIF (default 60 for arrows, 180 for particles)
+--reach DISTANCE        how far a reading's current may be shown in the particle views: 800, 800m, 1.5km, 0.5nm (default 1000m)
+--lifetime TIME         how long a reading stays on the scrubber: 90, 90m, 3h, 1h30m, or all (default 60m for arrows, 3h for particles)
+--no-day-average        leave out the all-day average slide
 --fade MIN              minutes of fade-out at the end of that time (default 20)
 --step MIN              GIF minutes per frame (default: about 150 frames)
 --frame-ms MS           GIF milliseconds per frame (default 90)

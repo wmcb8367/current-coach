@@ -58,7 +58,7 @@ def hour_groups(ms: list[Measurement]):
 
 def build_deck(path, *, th: Theme, units: Units, gif_path, hour_panels: dict, ms: list[Measurement],
                title: str, kicker: str, zone_label: str, sources: list[str], lifetime: float,
-               coach_note: str | None = None):
+               coach_note: str | None = None, average_gif=None, lifetime_label: str | None = None):
     prs = Presentation()
     prs.slide_width, prs.slide_height = Inches(SW), Inches(SH)
     blank = prs.slide_layouts[6]
@@ -69,8 +69,18 @@ def build_deck(path, *, th: Theme, units: Units, gif_path, hour_panels: dict, ms
     s.shapes.add_picture(str(gif_path), 0, 0, width=prs.slide_width, height=prs.slide_height)
     s.notes_slide.notes_text_frame.text = (
         f"{title}. Time scrubber of {len(ms)} current readings. Each arrow appears at its reading time and "
-        f"fades out {lifetime:g} minutes later. Arrows point the way the water flows. Times {zone_label}. "
+        f"stays for {lifetime_label or f'{lifetime:g} minutes'}. Arrows point the way the water flows. Times {zone_label}. "
         f"Source: {', '.join(sources)}")
+
+    # ---- slide 2: all-day average (looping particles)
+    if average_gif is not None:
+        s = prs.slides.add_slide(blank)
+        _bg(s, th.page)
+        s.shapes.add_picture(str(average_gif), 0, 0, width=prs.slide_width, height=prs.slide_height)
+        s.notes_slide.notes_text_frame.text = (
+            f"All-day average of {len(ms)} current readings, {ms[0].t:%H:%M} to {ms[-1].t:%H:%M} {zone_label}. "
+            "Every reading counts for the whole animation; where their reach overlaps, speed and direction "
+            f"are averaged regardless of time. Source: {', '.join(sources)}")
 
     # ---- one slide per hour
     for hour, group in hour_groups(ms):
