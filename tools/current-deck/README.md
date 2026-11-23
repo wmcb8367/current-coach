@@ -99,7 +99,7 @@ Times with no date (such as `10:45` in a coach log) take the date in the file na
 --land auto|gshhg|naturalearth|none|FILE   coastline source (see Coastline below)
 --gif-style arrows|particles   slide-1 animation style (default arrows)
 --reach METERS          particles only: how far a reading's current may be shown (default 1000)
---lifetime MIN          minutes an arrow stays on the GIF (default 60)
+--lifetime MIN          minutes a reading stays on the GIF (default 60 for arrows, 180 for particles)
 --fade MIN              minutes of fade-out at the end of that time (default 20)
 --step MIN              GIF minutes per frame (default: about 150 frames)
 --frame-ms MS           GIF milliseconds per frame (default 90)

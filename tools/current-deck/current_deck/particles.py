@@ -62,7 +62,7 @@ def field_at(pts, rx, ry, ru, rv, rspd, ralpha, reach):
 class ParticleField:
     """Windy-style particles advected through the bounded field."""
 
-    def __init__(self, frame, units, *, reach_m: float = 1000.0, n: int = 1400, trail: int = 16,
+    def __init__(self, frame, units, *, reach_m: float = 1000.0, n: int = 2000, trail: int = 8,
                  life: int = 90, seed: int = 7, px_per_frame: float = 0.008, per_reading: int = 110):
         self.f, self.units = frame, units
         self.reach = reach_m / M_PER_NM

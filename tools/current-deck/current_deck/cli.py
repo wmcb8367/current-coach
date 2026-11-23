@@ -52,7 +52,8 @@ def parse_args(argv=None):
     p.add_argument("--reach", type=float, default=1000.0, metavar="METERS",
                    help="particles only: how far from a reading its current may be shown (default 1000 m). "
                         "Nothing is drawn beyond this distance from every live reading.")
-    p.add_argument("--lifetime", type=float, default=60, help="minutes an arrow stays on the GIF (default 60)")
+    p.add_argument("--lifetime", type=float,
+                   help="minutes a reading stays on the GIF (default 60 for arrows, 180 for particles)")
     p.add_argument("--fade", type=float, default=20, help="minutes of fade-out at the end of its life (default 20)")
     p.add_argument("--step", type=float, help="GIF minutes per frame (default: about 150 frames)")
     p.add_argument("--frame-ms", type=int, default=90, help="GIF milliseconds per frame (default 90)")
@@ -101,6 +102,8 @@ def main(argv=None) -> int:
     assets.mkdir(parents=True, exist_ok=True)
     out.parent.mkdir(parents=True, exist_ok=True)
     th = THEMES[a.theme]
+    if a.lifetime is None:
+        a.lifetime = 180.0 if a.gif_style == "particles" else 60.0
 
     units = make_units(a.units, th.strength, max(m.speed_kt for m in ms), a.scale_max)
     kicker = a.kicker or (f"{days[0].day} {days[0]:%B} · current readings" if len(days) == 1 else "current readings")
