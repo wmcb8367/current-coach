@@ -38,27 +38,47 @@ SCRUBBER = (0.67, 6.80, 12.0, 0.50)
 class Units:
     name: str           # "kt" or "m/min"
     factor: float       # display value per knot
-    bins: tuple         # 3 thresholds in display units -> 4 classes
+    vmax_kt: float      # speed at the top of the colour gradient
+    ramp: tuple         # gradient stops, weakest to strongest
 
     def fmt(self, kt: float) -> str:
         v = kt * self.factor
         return f"{v:.2f} kt" if self.name == "kt" else f"{v:.1f} m/min"
 
-    def cls(self, kt: float) -> int:
-        v = kt * self.factor
-        return sum(v >= b for b in self.bins)
+    def frac(self, kt: float) -> float:
+        return min(max(kt / self.vmax_kt, 0.0), 1.0)
 
-    def legend(self):
-        b = self.bins
-        u = self.name
-        return [f"Under {b[0]:g} {u}", f"{b[0]:g} to {b[1]:g} {u}", f"{b[1]:g} to {b[2]:g} {u}",
-                f"{b[2]:g} {u} and up"]
+    def color(self, kt: float) -> str:
+        return ramp_color(self.ramp, self.frac(kt))
+
+    def ticks(self):
+        """(fraction, label) pairs for the key: evenly spaced values in display units."""
+        top = self.vmax_kt * self.factor
+        step = next(st for st in (0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 50, 100) if top / st <= 5.01)
+        out, v = [], 0.0
+        while v <= top + 1e-9:
+            out.append((v / top, f"{v:g}"))
+            v += step
+        return out
 
 
-def make_units(name: str = "kt", bins=None) -> Units:
-    if name == "m/min":
-        return Units("m/min", M_PER_NM / 60, tuple(bins) if bins else (8.0, 15.0, 23.0))
-    return Units("kt", 1.0, tuple(bins) if bins else (0.25, 0.5, 0.75))
+def ramp_color(ramp, t: float) -> str:
+    """Linear interpolation along the gradient stops; t in 0..1."""
+    from matplotlib.colors import to_hex, to_rgb
+    x = min(max(t, 0.0), 1.0) * (len(ramp) - 1)
+    i = min(int(x), len(ramp) - 2)
+    a, b = to_rgb(ramp[i]), to_rgb(ramp[i + 1])
+    k = x - i
+    return to_hex([a[j] + (b[j] - a[j]) * k for j in range(3)])
+
+
+def make_units(name: str, ramp, max_kt: float, top: float | None = None) -> Units:
+    """`top` = top of the colour scale in display units; default rounds the strongest reading up."""
+    factor = M_PER_NM / 60 if name == "m/min" else 1.0
+    if top is None:
+        step = 5.0 if name == "m/min" else 0.25
+        top = max(step, math.ceil(max_kt * factor / step - 1e-9) * step)
+    return Units(name, factor, top / factor, tuple(ramp))
 
 
 # --------------------------------------------------------------------------- geometry
@@ -69,6 +89,7 @@ class MapFrame:
     kt_to_nm: float          # arrow length in nm per knot of current
     xlim: tuple
     ylim: tuple
+    base_nm: float = 0.0     # length every arrow gets before speed is added, so weak ones keep a tail
 
     @property
     def coslat(self) -> float:
@@ -82,7 +103,7 @@ class MapFrame:
 
     def arrow(self, m: Measurement):
         x, y = self.xy(m.lat, m.lon)
-        L = m.speed_kt * self.kt_to_nm
+        L = self.base_nm + m.speed_kt * self.kt_to_nm
         a = math.radians(m.toward_deg)
         return (x, y), (x + L * math.sin(a), y + L * math.cos(a))
 
@@ -109,12 +130,25 @@ def _fit(x0, x1, y0, y1, aspect):
     return (x0, x1), (y0 - g, y1 + g)
 
 
-def build_frame(ms: list[Measurement], aspect: float, *, arrow_frac: float = 0.4,
-                kt_to_nm: float | None = None, pad_frac: float = 0.12) -> MapFrame:
+BASE_ARROW_IN = 0.30      # arrow length at zero speed, inches on the slide
+SHAFT_IN = 0.062          # shaft thickness
+HEAD_LEN_IN = 0.21        # arrowhead length (shrinks a little on the shortest arrows)
+HEAD_W_IN = 0.20          # arrowhead width
+
+
+def build_frame(ms: list[Measurement], aspect: float, *, panel_w_in: float = RIGHT_PANEL[2], **kw) -> MapFrame:
     """Fit all readings and their arrows in a box with width/height = aspect."""
+    f = _build_frame(ms, aspect, 0.0, **kw)
+    for _ in range(2):      # base arrow length is fixed in inches, so it depends on the fitted width
+        f = _build_frame(ms, aspect, BASE_ARROW_IN * f.width / panel_w_in, **kw)
+    return f
+
+
+def _build_frame(ms: list[Measurement], aspect: float, base_nm: float, *, arrow_frac: float = 0.3,
+                 kt_to_nm: float | None = None, pad_frac: float = 0.12) -> MapFrame:
     lat0 = sum(m.lat for m in ms) / len(ms)
     lon0 = sum(m.lon for m in ms) / len(ms)
-    f = MapFrame(lat0, lon0, 1.0, (0, 1), (0, 1))
+    f = MapFrame(lat0, lon0, 1.0, (0, 1), (0, 1), base_nm)
     pts = [f.xy(m.lat, m.lon) for m in ms]
     xs, ys = [p[0] for p in pts], [p[1] for p in pts]
     span = max(max(xs) - min(xs), max(ys) - min(ys), 0.5)
@@ -127,9 +161,9 @@ def build_frame(ms: list[Measurement], aspect: float, *, arrow_frac: float = 0.4
     pad = pad_frac * max(max(xs) - min(xs), max(ys) - min(ys), 0.3)
     x0, x1 = min(xs) - pad, max(xs) + pad
     y0, y1 = min(ys) - pad, max(ys) + pad
-    # readings live in the lower-middle band: legend takes the top 36%, scale bar the bottom 14%
-    H = (y1 - y0) / 0.50
-    y0, y1 = y0 - 0.14 * H, y1 + 0.36 * H
+    # readings live in the middle band: the key takes the top 15%, scale bar the bottom 14%
+    H = (y1 - y0) / 0.71
+    y0, y1 = y0 - 0.14 * H, y1 + 0.15 * H
     W = x1 - x0
     if W / H < aspect:
         g = (H * aspect - W) / 2
@@ -146,7 +180,7 @@ def locator_frame(zoom: MapFrame, aspect: float, factor: float = 4.0, min_span_n
     cx, cy = sum(zoom.xlim) / 2, sum(zoom.ylim) / 2
     span = max(max(zoom.width, zoom.height) * factor, min_span_nm)
     xl, yl = _fit(cx - span / 2, cx + span / 2, cy - span / 2, cy + span / 2, aspect)
-    return MapFrame(zoom.lat0, zoom.lon0, zoom.kt_to_nm, xl, yl)
+    return MapFrame(zoom.lat0, zoom.lon0, zoom.kt_to_nm, xl, yl, zoom.base_nm)
 
 
 def _nice(v: float, steps=(1, 2, 5)) -> float:
@@ -180,7 +214,7 @@ def draw_panel(ax, f: MapFrame, th: Theme, land):
 
 
 def scale_bar(ax, f: MapFrame, th: Theme, fs=1.0):
-    L = _nice(0.16 * f.width * M_PER_NM, steps=(1, 2, 5))
+    L = _nice(0.25 * f.width * M_PER_NM / 2.4, steps=(1, 2, 5))     # between ~10% and 25% of the width
     label = f"{L / 1000:g} km" if L >= 1000 else f"{L:g} m"
     x0 = f.xlim[0] + 0.05 * f.width
     y0 = f.ylim[0] + 0.055 * f.height
@@ -196,21 +230,49 @@ def north_arrow(ax, th: Theme, fs=1.0, x=0.08, y=0.86):
             fontfamily=th.mono, fontweight="bold", ha="center", va="center", zorder=9)
 
 
+KEY_BOX = (0.022, 0.895, 0.46, 0.075)      # x, y, w, h in axes fractions (top-left of the panel)
+
+
 def legend(ax, th: Theme, units: Units, fs=1.0):
-    rows = units.legend()
-    x, y = 0.022, 0.975
-    lh = 0.062
-    h = lh * (len(rows) + 1) + 0.03
-    ax.add_patch(FancyBboxPatch((x, y - h), 0.43, h, boxstyle="square,pad=0", transform=ax.transAxes,
-                                fc=th.box, ec=th.border, lw=1, zorder=9))
-    ax.text(x + 0.025, y - 0.045, "CURRENT STRENGTH", transform=ax.transAxes, color=th.kicker,
-            fontsize=12.5 * fs, fontfamily=th.mono, fontweight="bold", va="center", zorder=10)
-    for i, r in enumerate(rows):
-        yy = y - 0.045 - lh * (i + 1)
-        ax.add_patch(Rectangle((x + 0.025, yy - 0.017), 0.035, 0.034, transform=ax.transAxes,
-                               fc=th.strength[i], ec=th.text, lw=0.5, zorder=10))
-        ax.text(x + 0.075, yy, r, transform=ax.transAxes, color=th.text, fontsize=12 * fs,
-                fontfamily=th.mono, va="center", zorder=10)
+    """Slim pill-shaped gradient key with the unit at the left and values printed on the bar."""
+    import matplotlib.patheffects as pe
+    x, y, w, h = KEY_BOX
+    pos = ax.get_position()
+    ratio = (pos.height * ax.figure.get_figheight()) / (pos.width * ax.figure.get_figwidth())
+    pill = FancyBboxPatch((x + h * ratio / 2, y + h / 2), w - h * ratio, 0, transform=ax.transAxes,
+                          boxstyle=f"round,pad={h / 2},rounding_size={h / 2}", mutation_aspect=1 / ratio * 1.0,
+                          fc="none", ec=th.text, lw=0.8, alpha=0.9, zorder=11)
+    pill.set_boxstyle("round", pad=h * ratio / 2, rounding_size=h * ratio / 2)
+    pill.set_mutation_aspect(1 / ratio)
+    ax.add_patch(pill)
+    lead = 0.17           # share of the bar before the 0 tick, holding the unit label
+    n = 120
+    for i in range(n):
+        t = i / (n - 1)
+        r = Rectangle((x + w * i / n, y), w / n * 1.3, h, transform=ax.transAxes, ec="none", zorder=10,
+                      fc=ramp_color(units.ramp, max(0.0, (t - lead) / (1 - lead - 0.07))))
+        ax.add_patch(r)
+        r.set_clip_path(pill)
+    stroke = [pe.withStroke(linewidth=2.2 * fs, foreground="#00000066")]
+    kw = dict(transform=ax.transAxes, color="#FFFFFF", fontsize=12.5 * fs, fontfamily=th.mono,
+              fontweight="bold", va="center", ha="center", zorder=12, path_effects=stroke)
+    ax.text(x + w * lead * 0.45, y + h / 2, units.name, **kw)
+    for t, lab in units.ticks():
+        ax.text(x + w * (lead + t * (1 - lead - 0.07)), y + h / 2, lab, **kw)
+
+
+def arrow_polygon(tail, head, unit_nm: float, fs: float = 1.0):
+    """Arrow outline with a real shaft. `unit_nm` = map nm per slide inch."""
+    dx, dy = head[0] - tail[0], head[1] - tail[1]
+    L = math.hypot(dx, dy) or 1e-9
+    ux, uy = dx / L, dy / L
+    px, py = -uy, ux
+    hl = min(HEAD_LEN_IN * fs * unit_nm, 0.6 * L)
+    hw = HEAD_W_IN * fs * unit_nm * (hl / (HEAD_LEN_IN * fs * unit_nm)) ** 0.5 / 2
+    sw = SHAFT_IN * fs * unit_nm / 2
+    nx, ny = head[0] - ux * hl, head[1] - uy * hl      # where the head starts
+    return [(tail[0] + px * sw, tail[1] + py * sw), (nx + px * sw, ny + py * sw), (nx + px * hw, ny + py * hw),
+            head, (nx - px * hw, ny - py * hw), (nx - px * sw, ny - py * sw), (tail[0] - px * sw, tail[1] - py * sw)]
 
 
 class LabelPlacer:
@@ -241,7 +303,7 @@ class LabelPlacer:
         away = (-math.sin(a), -math.cos(a))
         cands = []
         for dx, dy in [away, (1, 0), (-1, 0), (0, -1), (0, 1), (0.7, -0.7), (-0.7, -0.7), (0.7, 0.7), (-0.7, 0.7)]:
-            for dist in (1.0, 2.2):
+            for dist in (1.0, 2.2, 3.6):
                 cx = tail[0] + dx * (gx * dist + w / 2)
                 cy = tail[1] + dy * (gy * dist + h / 2)
                 cands.append((cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2))
@@ -258,6 +320,7 @@ class LabelPlacer:
 
         best = min(enumerate(cands), key=lambda ib: cost(ib[1], ib[0]))[1]
         self.boxes.append(best)
+        self.last_box = best
         return (best[0] + best[2]) / 2, (best[1] + best[3]) / 2
 
 
@@ -266,12 +329,13 @@ def draw_reading(ax, f: MapFrame, th: Theme, m: Measurement, units: Units, alpha
     """Arrow from the reading toward the set, white dot at the reading, bold label."""
     if alpha <= 0.01:
         return []
-    c = th.strength[units.cls(m.speed_kt)]
+    c = units.color(m.speed_kt)
     tail, head = f.arrow(m)
     arts = []
-    arr = FancyArrowPatch(tail, head, arrowstyle="-|>,head_length=0.7,head_width=0.45",
-                          mutation_scale=26 * fs, lw=4.2 * fs, color=c, alpha=alpha, zorder=5,
-                          shrinkA=0, shrinkB=0, joinstyle="miter", capstyle="butt")
+    pos = ax.get_position()
+    unit_nm = f.width / (pos.width * ax.figure.get_figwidth()) / fs   # nm per slide inch
+    arr = Polygon(arrow_polygon(tail, head, unit_nm, fs), closed=True, fc=c, ec=th.panel, lw=0.8 * fs,
+                  alpha=alpha, zorder=5, joinstyle="miter")
     ax.add_patch(arr)
     arts.append(arr)
     arts.append(ax.scatter([tail[0]], [tail[1]], s=70 * fs, color="#FFFFFF", alpha=alpha,
@@ -281,6 +345,12 @@ def draw_reading(ax, f: MapFrame, th: Theme, m: Measurement, units: Units, alpha
             placer = LabelPlacer(ax, f, fs)
             placer.add_segment(tail, head)
         lx, ly = placer.place(tail, m.toward_deg, label)
+        # thin leader from the reading to its label when the label had to move away
+        bx0, by0, bx1, by1 = placer.last_box
+        ex, ey = min(max(tail[0], bx0), bx1), min(max(tail[1], by0), by1)
+        gap_in = math.hypot((ex - tail[0]) / f.width * placer.w_in, (ey - tail[1]) / f.height * placer.h_in)
+        if gap_in > 0.2 * fs:
+            arts += ax.plot([tail[0], ex], [tail[1], ey], color=th.text, lw=0.9 * fs, alpha=0.55 * alpha, zorder=4)
         arts.append(ax.text(lx, ly, label, color=th.text, alpha=alpha, fontsize=13 * fs,
                             fontfamily=th.mono, fontweight="bold", ha="center", va="center", zorder=7,
                             clip_on=True))
@@ -288,8 +358,8 @@ def draw_reading(ax, f: MapFrame, th: Theme, m: Measurement, units: Units, alpha
 
 
 def legend_keepout(f: MapFrame):
-    """Data-unit box covered by legend() (axes fraction 0.022..0.452 x, top ~0.33 of height)."""
-    return (f.xlim[0], f.ylim[0] + 0.62 * f.height, f.xlim[0] + 0.47 * f.width, f.ylim[1])
+    """Data-unit box covered by legend() (left half of the width, top 13% of the height)."""
+    return (f.xlim[0], f.ylim[0] + 0.87 * f.height, f.xlim[0] + 0.51 * f.width, f.ylim[1])
 
 
 def scale_keepout(f: MapFrame):
@@ -432,7 +502,7 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
         hour += timedelta(hours=1)
     for m in ms:
         x = (m.t - t_start).total_seconds() / 60
-        axs.plot([x, x], [0.55, 1.0], color=th.strength[units.cls(m.speed_kt)], lw=2, zorder=3)
+        axs.plot([x, x], [0.55, 1.0], color=units.color(m.speed_kt), lw=2, zorder=3)
 
     dyn, frames = [], []
     for i in range(n):

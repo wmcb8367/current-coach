@@ -51,9 +51,19 @@ def test_fade():
 
 
 def test_units():
-    u = make_units("m/min")
+    ramp = ("#000000", "#FFFFFF")
+    u = make_units("m/min", ramp, 0.78)
     assert u.fmt(1.0) == "30.9 m/min"
-    assert make_units("kt").cls(0.6) == 2
+    assert u.vmax_kt * u.factor == 25                      # 24.1 m/min rounds up to 25
+    k = make_units("kt", ramp, 0.78)
+    assert k.vmax_kt == 1.0
+    assert k.color(0) == "#000000" and k.color(2.0) == "#ffffff"
+    assert k.color(0.5) == "#808080"
+
+
+def test_weak_arrows_keep_a_tail():
+    from current_deck.render import BASE_ARROW_IN, HEAD_LEN_IN
+    assert BASE_ARROW_IN > HEAD_LEN_IN
 
 
 def test_end_to_end(tmp_path, capsys):

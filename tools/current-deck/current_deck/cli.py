@@ -40,7 +40,8 @@ def parse_args(argv=None):
     p.add_argument("--theme", choices=sorted(THEMES), default="sailboss",
                    help="sailboss (default, the Luther current-readings look) or m2x (Current Coach app colours)")
     p.add_argument("--units", choices=["kt", "m/min"], default="kt", help="speed units shown on slides (default kt)")
-    p.add_argument("--bins", help="three strength thresholds in display units, e.g. 0.25,0.5,0.75 (kt) or 8,15,23 (m/min)")
+    p.add_argument("--scale-max", type=float,
+                   help="speed at the top of the colour gradient, in display units (default: strongest reading rounded up)")
     p.add_argument("--land", default="auto",
                    help="coastline: 'auto' (Natural Earth 10m, cached download), 'none', or a GeoJSON file of land polygons")
     p.add_argument("--kicker", help="small cyan line above titles (default: date, e.g. '23 November · current readings')")
@@ -94,9 +95,7 @@ def main(argv=None) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     th = THEMES[a.theme]
 
-    units = make_units(a.units, [float(x) for x in a.bins.split(",")] if a.bins else None)
-    if a.bins and len(units.bins) != 3:
-        sys.exit("--bins needs exactly three comma-separated numbers")
+    units = make_units(a.units, th.strength, max(m.speed_kt for m in ms), a.scale_max)
     kicker = a.kicker or (f"{days[0].day} {days[0]:%B} · current readings" if len(days) == 1 else "current readings")
     if len(days) > 1:
         sys.stderr.write("note: readings span more than one day; hourly slides are per calendar hour.\n")
