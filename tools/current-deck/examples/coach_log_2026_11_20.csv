@@ -1,0 +1,7 @@
+time_hkt,race,position_note,lat,lon,wind_from_deg,wind_kt,current_kt,current_from_deg
+10:40,Race 1 pre-start,Committee boat,,,90,12,,
+10:52,Race 1 pre-start,Start line,22.2780,114.3230,90,12,0.30,50.0
+11:15,Race 1,Left corner,22.3070,114.3340,80,12,0.12,150.0
+11:32,Race 1,Top mark,22.2880,114.3580,70,13,0.60,50.0
+12:05,Race 1,Bottom right,22.2760,114.3380,80,12,0.72,70.0
+12:20,Race 1,Mid left,22.2990,114.3310,,,0.20,100.0
