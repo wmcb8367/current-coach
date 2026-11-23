@@ -62,8 +62,8 @@ def field_at(pts, rx, ry, ru, rv, rspd, ralpha, reach):
 class ParticleField:
     """Windy-style particles advected through the bounded field."""
 
-    def __init__(self, frame, units, *, reach_m: float = 1000.0, n: int = 1400, trail: int = 8,
-                 life: int = 40, seed: int = 7, px_per_frame: float = 0.008, per_reading: int = 110):
+    def __init__(self, frame, units, *, reach_m: float = 1000.0, n: int = 1400, trail: int = 16,
+                 life: int = 90, seed: int = 7, px_per_frame: float = 0.008, per_reading: int = 110):
         self.f, self.units = frame, units
         self.reach = reach_m / M_PER_NM
         self.n, self.trail, self.life, self.per_reading = n, trail, life, per_reading
@@ -141,8 +141,8 @@ class ParticleField:
         segs = np.stack([a[ok], b[ok]], axis=1)
         frac = np.clip(self.spd_hist[:, 1:][ok] / self.units.vmax_kt, 0, 1)
         rgb = self.lut[(frac * 255).astype(int)]
-        along = np.broadcast_to(np.linspace(0.15, 1.0, self.trail - 1), ok.shape)[ok]      # head brightest
-        life = np.broadcast_to(np.sin(np.clip(self.age / self.life, 0, 1) * math.pi)[:, None] ** 0.6, ok.shape)[ok]
+        along = np.broadcast_to(np.linspace(0.0, 1.0, self.trail - 1) ** 0.7 * 0.9 + 0.1, ok.shape)[ok]      # head brightest
+        life = np.broadcast_to(np.clip(np.minimum(self.age / 6.0, (self.life - self.age) / 14.0), 0, 1)[:, None], ok.shape)[ok]
         alpha = np.clip(along * life * np.sqrt(self.cov_hist[:, 1:][ok]), 0, 1) * 0.95
         lc = LineCollection(segs, colors=np.column_stack([rgb, alpha]), linewidths=1.25 * fs, zorder=3,
                             capstyle="round")

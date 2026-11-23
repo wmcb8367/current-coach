@@ -520,6 +520,7 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
 
     field = None
     if style == "particles":
+        fade = min(fade, lifetime / 6)      # particles hold full strength longer, then ease out
         from .particles import ParticleField, reach_outline
         field = ParticleField(zoom, units, reach_m=reach_m, n=particles)
     dyn, frames = [], []
