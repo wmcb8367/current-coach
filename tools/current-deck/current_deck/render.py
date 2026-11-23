@@ -145,7 +145,7 @@ def build_frame(ms: list[Measurement], aspect: float, *, panel_w_in: float = RIG
 
 
 def _build_frame(ms: list[Measurement], aspect: float, base_nm: float, *, arrow_frac: float = 0.3,
-                 kt_to_nm: float | None = None, pad_frac: float = 0.12) -> MapFrame:
+                 kt_to_nm: float | None = None, pad_frac: float = 0.12, margin_nm: float = 0.0) -> MapFrame:
     lat0 = sum(m.lat for m in ms) / len(ms)
     lon0 = sum(m.lon for m in ms) / len(ms)
     f = MapFrame(lat0, lon0, 1.0, (0, 1), (0, 1), base_nm)
@@ -158,7 +158,7 @@ def _build_frame(ms: list[Measurement], aspect: float, base_nm: float, *, arrow_
         _, (hx, hy) = f.arrow(m)
         xs.append(hx)
         ys.append(hy)
-    pad = pad_frac * max(max(xs) - min(xs), max(ys) - min(ys), 0.3)
+    pad = pad_frac * max(max(xs) - min(xs), max(ys) - min(ys), 0.3) + margin_nm
     x0, x1 = min(xs) - pad, max(xs) + pad
     y0, y1 = min(ys) - pad, max(ys) + pad
     # readings live in the middle band: the key takes the top 15%, scale bar the bottom 14%
@@ -325,7 +325,8 @@ class LabelPlacer:
 
 
 def draw_reading(ax, f: MapFrame, th: Theme, m: Measurement, units: Units, alpha: float = 1.0, *,
-                 label: str | None = None, placer: LabelPlacer | None = None, fs: float = 1.0):
+                 label: str | None = None, placer: LabelPlacer | None = None, fs: float = 1.0,
+                 arrow: bool = True):
     """Arrow from the reading toward the set, white dot at the reading, bold label."""
     if alpha <= 0.01:
         return []
@@ -334,10 +335,11 @@ def draw_reading(ax, f: MapFrame, th: Theme, m: Measurement, units: Units, alpha
     arts = []
     pos = ax.get_position()
     unit_nm = f.width / (pos.width * ax.figure.get_figwidth()) / fs   # nm per slide inch
-    arr = Polygon(arrow_polygon(tail, head, unit_nm, fs), closed=True, fc=c, ec=th.panel, lw=0.8 * fs,
-                  alpha=alpha, zorder=5, joinstyle="miter")
-    ax.add_patch(arr)
-    arts.append(arr)
+    if arrow:
+        arr = Polygon(arrow_polygon(tail, head, unit_nm, fs), closed=True, fc=c, ec=th.panel, lw=0.8 * fs,
+                      alpha=alpha, zorder=5, joinstyle="miter")
+        ax.add_patch(arr)
+        arts.append(arr)
     arts.append(ax.scatter([tail[0]], [tail[1]], s=70 * fs, color="#FFFFFF", alpha=alpha,
                            edgecolors=th.panel, linewidths=1.6 * fs, zorder=6))
     if label:
@@ -351,9 +353,13 @@ def draw_reading(ax, f: MapFrame, th: Theme, m: Measurement, units: Units, alpha
         gap_in = math.hypot((ex - tail[0]) / f.width * placer.w_in, (ey - tail[1]) / f.height * placer.h_in)
         if gap_in > 0.2 * fs:
             arts += ax.plot([tail[0], ex], [tail[1], ey], color=th.text, lw=0.9 * fs, alpha=0.55 * alpha, zorder=4)
-        arts.append(ax.text(lx, ly, label, color=th.text, alpha=alpha, fontsize=13 * fs,
-                            fontfamily=th.mono, fontweight="bold", ha="center", va="center", zorder=7,
-                            clip_on=True))
+        txt = ax.text(lx, ly, label, color=th.text, alpha=alpha, fontsize=13 * fs,
+                      fontfamily=th.mono, fontweight="bold", ha="center", va="center", zorder=7,
+                      clip_on=True)
+        if not arrow:      # keep labels readable over the particle trails
+            import matplotlib.patheffects as pe
+            txt.set_path_effects([pe.withStroke(linewidth=3 * fs, foreground=th.panel, alpha=0.9)])
+        arts.append(txt)
     return arts
 
 
@@ -447,8 +453,13 @@ def header(fig, th: Theme, kicker: str, title: str):
 
 def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: str, title: str,
                zone_label: str, zoom: MapFrame, land, lifetime: float = 60, fade: float = 20,
-               step_min: float | None = None, frame_ms: int = 90, scale: float = 0.96, max_frames: int = 400):
-    """Animated scrubber: each arrow appears at its time and is gone `lifetime` minutes later."""
+               step_min: float | None = None, frame_ms: int = 90, scale: float = 0.96, max_frames: int = 400,
+               style: str = "arrows", reach_m: float = 1000.0, particles: int = 1400):
+    """Animated scrubber: each reading appears at its time and is gone `lifetime` minutes later.
+
+    style="arrows" draws one arrow per reading. style="particles" draws drifting particles
+    through a field interpolated from the live readings, limited to `reach_m` from each one.
+    """
     register_fonts()
     t_start = _floor(ms[0].t - timedelta(minutes=5), 5)
     t_end = ms[-1].t + timedelta(minutes=lifetime)
@@ -478,7 +489,10 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
         s.set_linewidth(1.6)
     axc.text(0.06, 0.84, "TIME ON THE WATER", transform=axc.transAxes, color=th.kicker, fontsize=12,
              fontfamily=th.mono, fontweight="bold", va="center")
-    axc.text(0.06, 0.14, f"{zone_label} · arrows fade out {lifetime:g} min after each reading",
+    reach_txt = f"{reach_m / 1000:g} km" if reach_m >= 1000 else f"{reach_m:g} m"
+    foot = (f"{zone_label} · flow shown only within {reach_txt} of a reading" if style == "particles"
+            else f"{zone_label} · arrows fade out {lifetime:g} min after each reading")
+    axc.text(0.06, 0.14, foot,
              transform=axc.transAxes, color=th.muted, fontsize=9.5, fontfamily=th.mono, va="center")
 
     axr = _axes(fig, RIGHT_PANEL)
@@ -504,6 +518,10 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
         x = (m.t - t_start).total_seconds() / 60
         axs.plot([x, x], [0.55, 1.0], color=units.color(m.speed_kt), lw=2, zorder=3)
 
+    field = None
+    if style == "particles":
+        from .particles import ParticleField, reach_outline
+        field = ParticleField(zoom, units, reach_m=reach_m, n=particles)
     dyn, frames = [], []
     for i in range(n):
         for a in dyn:
@@ -513,9 +531,17 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
         shown = [(m, fade_alpha((now - m.t).total_seconds() / 60, lifetime, fade)) for m in ms]
         shown = [(m, al) for m, al in shown if al > 0]
         live = len(shown)
-        placer = make_placer(axr, zoom, [m for m, _ in shown], fs)
+        if field is not None:
+            field.step(shown)
+            dyn.append(field.draw(axr, fs))
+            dyn += reach_outline(axr, zoom, shown, field.reach, th.muted, fs)
+        placer = make_placer(axr, zoom, [m for m, _ in shown] if field is None else [], fs)
+        if field is not None:           # no arrows to avoid, but keep labels off the reading dots
+            for m, _ in shown:
+                dot = zoom.xy(m.lat, m.lon)
+                placer.add_segment(dot, dot)
         for m, al in sorted(shown, key=lambda p: p[0].t):
-            dyn += draw_reading(axr, zoom, th, m, units, al, placer=placer, fs=fs,
+            dyn += draw_reading(axr, zoom, th, m, units, al, placer=placer, fs=fs, arrow=field is None,
                                 label=f"{m.t:%H:%M} · {units.fmt(m.speed_kt)}")
         x = i * step_min
         dyn += axs.plot([0, x], [0.25, 0.25], color=th.wordmark, lw=6, solid_capstyle="round", zorder=4)
@@ -531,7 +557,11 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
         frames.append(Image.open(buf).convert("RGB"))
     plt.close(fig)
     _save_gif(frames, path, frame_ms)
-    return {"frames": n, "step_min": round(step_min, 2), "start": t_start.isoformat(), "end": t_end.isoformat()}
+    info = {"frames": n, "step_min": round(step_min, 2), "start": t_start.isoformat(), "end": t_end.isoformat(),
+            "style": style}
+    if style == "particles":
+        info["reach_m"] = reach_m
+    return info
 
 
 def _save_gif(frames, path, frame_ms):

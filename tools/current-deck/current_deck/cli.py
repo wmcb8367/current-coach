@@ -43,8 +43,15 @@ def parse_args(argv=None):
     p.add_argument("--scale-max", type=float,
                    help="speed at the top of the colour gradient, in display units (default: strongest reading rounded up)")
     p.add_argument("--land", default="auto",
-                   help="coastline: 'auto' (Natural Earth 10m, cached download), 'none', or a GeoJSON file of land polygons")
+                   help="coastline: 'auto' (detailed GSHHG if basemap-data-hires is installed, else Natural Earth), "
+                        "'gshhg', 'naturalearth', 'none', or a GeoJSON file of land polygons")
     p.add_argument("--kicker", help="small cyan line above titles (default: date, e.g. '23 November · current readings')")
+    p.add_argument("--gif-style", choices=["arrows", "particles"], default="arrows",
+                   help="slide-1 animation: one arrow per reading (default), or drifting particles through a "
+                        "field interpolated between nearby readings")
+    p.add_argument("--reach", type=float, default=1000.0, metavar="METERS",
+                   help="particles only: how far from a reading its current may be shown (default 1000 m). "
+                        "Nothing is drawn beyond this distance from every live reading.")
     p.add_argument("--lifetime", type=float, default=60, help="minutes an arrow stays on the GIF (default 60)")
     p.add_argument("--fade", type=float, default=20, help="minutes of fade-out at the end of its life (default 20)")
     p.add_argument("--step", type=float, help="GIF minutes per frame (default: about 150 frames)")
@@ -100,16 +107,19 @@ def main(argv=None) -> int:
     if len(days) > 1:
         sys.stderr.write("note: readings span more than one day; hourly slides are per calendar hour.\n")
 
+    if a.reach <= 0:
+        sys.exit("--reach must be a positive distance in metres")
     zoom = build_frame(ms, RIGHT_PANEL[2] / RIGHT_PANEL[3])
     loc = locator_frame(zoom, LEFT_PANEL[2] / LEFT_PANEL[3])
-    land, land_note = load_land(locator_frame(zoom, 1.0, factor=6).bbox_lonlat(0.2), a.land)
+    land, land_note, land_src = load_land(locator_frame(zoom, 1.0, factor=6).bbox_lonlat(0.2), a.land)
     for r in reports[:1]:
         if land_note:
             r.notes.append(land_note)
 
     gif = assets / "scrubber.gif"
     ginfo = render_gif(ms, th, units, gif, kicker=kicker, title=title, zone_label=zl, zoom=zoom, land=land,
-                       lifetime=a.lifetime, fade=a.fade, step_min=a.step, frame_ms=a.frame_ms)
+                       lifetime=a.lifetime, fade=a.fade, step_min=a.step, frame_ms=a.frame_ms,
+                       style=a.gif_style, reach_m=a.reach)
 
     panels = {}
     for hour, group in hour_groups(ms):
@@ -123,7 +133,7 @@ def main(argv=None) -> int:
 
     summary = {
         "deck": str(out), "gif": str(gif), "assets_dir": str(assets), "slides": n_slides,
-        "timezone": zone, "readings_used": len(ms), "units": units.name, "land_polygons": len(land),
+        "timezone": zone, "readings_used": len(ms), "units": units.name, "land_source": land_src, "land_polygons": len(land),
         "hours": [f"{h:%Y-%m-%d %H}:00" for h, _ in hour_groups(ms)],
         "gif_info": ginfo,
         "inputs": [{"file": r.path, "rows": r.rows, "used": r.used, "skipped": r.skipped,

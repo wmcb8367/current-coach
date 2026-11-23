@@ -34,8 +34,30 @@ Python 3.11 or newer. IBM Plex fonts are bundled for the images. The deck's text
 
 - Run from `tools/current-deck` (or after `pip install .`). The command needs no prompts and no API keys.
 - Read the JSON on stdout. Check `inputs[].used`, `inputs[].skipped` and `inputs[].notes`, and tell the user about skipped rows or assumptions.
-- The coastline is downloaded once from GitHub (Natural Earth 1:10m, public domain) and cached in `~/.cache/current-deck`. With no network the maps are drawn without land and a note says so. Use `--land none` to skip it, or `--land shore.geojson` for a sharper shoreline.
+- The coastline comes from the `basemap-data-hires` package in `requirements.txt`, so install the requirements first. `land_source` in the JSON says which coastline was used. See Coastline below.
 - Rendering takes about 10 to 30 seconds, mostly for the GIF. Use `--step 5` for a quicker, choppier GIF.
+
+## Particle animation
+
+`--gif-style particles` swaps the arrows on slide 1 for drifting particles with trails, in the manner of a weather-map wind layer. The hourly slides still use arrows.
+
+The particles follow a field interpolated from the readings that are live at that moment on the scrubber. It is deliberately conservative so it doesn't suggest measurements that were never taken:
+
+- A reading only affects water within `--reach` metres of where it was taken (default 1000). Its weight falls smoothly to zero at that distance.
+- Beyond the reach of every live reading nothing is drawn. A faint dotted circle marks each reading's reach.
+- Where the reaches of two or more live readings overlap, speed is the weighted mean and direction is the weighted mean of unit vectors (so 350° and 010° average to 000°).
+- A reading stops contributing when it fades off the scrubber (`--lifetime`, `--fade`).
+
+Particle speed on screen is scaled for legibility, not real time. Colour is the interpolated speed on the same gradient as the key.
+
+## Coastline
+
+`--land auto` uses the first of these that is available:
+
+1. **GSHHG full resolution** (about 100 m), read from the `basemap-data-hires` pip package listed in `requirements.txt`. It needs no network once installed. The package is about 90 MB.
+2. **Natural Earth 1:10m**, downloaded once from GitHub and cached in `~/.cache/current-deck`. It is coarse (about 1 km) and looks blocky on the zoomed map. A note in the JSON says when this fallback was used.
+
+`--land FILE.geojson` takes your own land polygons, for example an OpenStreetMap extract, which is sharper again. `--land none` draws no land.
 
 ## Input columns
 
@@ -74,7 +96,9 @@ Times with no date (such as `10:45` in a coach log) take the date in the file na
 --theme sailboss|m2x    SailBoss (default) or Current Coach app colours
 --units kt|m/min        speed units on the slides (default kt; the Current Coach app works in m/min)
 --scale-max N           speed at the top of the colour gradient (default: strongest reading rounded up)
---land auto|none|FILE   coastline source
+--land auto|gshhg|naturalearth|none|FILE   coastline source (see Coastline below)
+--gif-style arrows|particles   slide-1 animation style (default arrows)
+--reach METERS          particles only: how far a reading's current may be shown (default 1000)
 --lifetime MIN          minutes an arrow stays on the GIF (default 60)
 --fade MIN              minutes of fade-out at the end of that time (default 20)
 --step MIN              GIF minutes per frame (default: about 150 frames)
@@ -107,7 +131,8 @@ python3 -m pytest tests
 
 - `current_deck/loader.py`: CSV reading, column matching, time zones, units, from/toward
 - `current_deck/render.py`: map panels, strength colours, label placement, the scrubber GIF
-- `current_deck/land.py`: coastline download, cache and clipping
+- `current_deck/land.py`: coastline sources, clipping and smoothing
+- `current_deck/particles.py`: bounded interpolation and the particle animation
 - `current_deck/deck.py`: the PPTX (python-pptx)
 - `current_deck/style.py`: themes and fonts
 - `current_deck/cli.py`: command line and JSON summary

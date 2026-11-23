@@ -93,3 +93,38 @@ def test_separate_date_and_time_columns(tmp_path):
     ms, rep, _ = load_csv(p, venue_tz="Asia/Hong_Kong")
     assert rep.time_column == "time"
     assert [m.t.strftime("%Y-%m-%d %H:%M") for m in ms] == ["2026-11-20 10:15", "2026-11-21 14:40"]
+
+
+def test_particle_field_is_bounded_and_blends():
+    import numpy as np
+    from current_deck.particles import field_at
+    # two readings 1 nm apart: 0.4 kt toward 350 and 0.8 kt toward 010; reach 0.6 nm
+    ang = np.radians([350.0, 10.0])
+    args = (np.array([0.0, 1.0]), np.array([0.0, 0.0]), np.sin(ang), np.cos(ang),
+            np.array([0.4, 0.8]), np.array([1.0, 1.0]), 0.6)
+    pts = np.array([[0.5, 0.0], [-0.3, 0.0], [3.0, 0.0], [0.0, 0.59]])
+    u, v, spd, cov = field_at(pts, *args)
+    assert spd[0] == pytest.approx(0.6) and u[0] == pytest.approx(0.0, abs=1e-9) and v[0] == pytest.approx(1.0)
+    assert spd[1] == pytest.approx(0.4)                      # only the first reading reaches here
+    assert cov[2] == 0 and spd[2] == 0                       # beyond every reach: nothing shown
+    assert 0 < cov[3] < 0.01                                 # fades out at the edge of the reach
+    # a faded-out reading contributes nothing
+    u, v, spd, cov = field_at(pts[:1], *args[:5], np.array([1.0, 0.0]), 0.6)
+    assert spd[0] == pytest.approx(0.4)
+
+
+def test_clip_ring():
+    from current_deck.land import clip_ring
+    sq = [(0, 0), (10, 0), (10, 10), (0, 10)]
+    c = clip_ring(sq, (5, 5, 20, 20))
+    assert c[:, 0].min() == 5 and c[:, 0].max() == 10 and c[:, 1].min() == 5
+    assert clip_ring(sq, (20, 20, 30, 30)) is None
+
+
+def test_particle_gif(tmp_path, capsys):
+    out = tmp_path / "deck.pptx"
+    rc = main([str(EX / "coach_log_2026_11_20.csv"), "-o", str(out), "--land", "none", "--step", "10",
+               "--gif-style", "particles", "--reach", "800", "--json"])
+    assert rc == 0
+    info = json.loads(capsys.readouterr().out)["gif_info"]
+    assert info["style"] == "particles" and info["reach_m"] == 800
