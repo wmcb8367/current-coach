@@ -66,3 +66,20 @@ def test_end_to_end(tmp_path, capsys):
     assert summary["hours"] == ["2026-11-20 10:00", "2026-11-20 11:00", "2026-11-20 12:00"]
     with zipfile.ZipFile(out) as z:
         assert any(n.endswith(".gif") for n in z.namelist())
+
+
+def test_explicit_from_mapping_beats_autodetected_toward(tmp_path):
+    p = tmp_path / "x.csv"
+    p.write_text("time_hkt,lat,lon,current_kt,direction_toward_deg,corrected_from\n"
+                 "2026-11-20T10:00:00+08:00,22.29,114.33,0.5,90,180\n")
+    ms, _, _ = load_csv(p, colmap={"from": "corrected_from"})
+    assert ms[0].toward_deg == pytest.approx(0.0)
+
+
+def test_separate_date_and_time_columns(tmp_path):
+    p = tmp_path / "x.csv"
+    p.write_text("date,time,lat,lon,current_kt,current_from_deg\n"
+                 "2026-11-20,10:15,22.29,114.33,0.5,90\n2026-11-21,14:40,22.29,114.33,0.4,80\n")
+    ms, rep, _ = load_csv(p, venue_tz="Asia/Hong_Kong")
+    assert rep.time_column == "time"
+    assert [m.t.strftime("%Y-%m-%d %H:%M") for m in ms] == ["2026-11-20 10:15", "2026-11-21 14:40"]

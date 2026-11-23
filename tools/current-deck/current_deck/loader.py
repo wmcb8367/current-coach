@@ -138,7 +138,7 @@ def _time_columns(cols: dict) -> list[tuple[str, str | None]]:
     """[(original column, zone hint or None)] for columns that look like times."""
     out = []
     for n, orig in cols.items():
-        if any(w == n or n.startswith(w + "_") or n.endswith("_" + w) for w in TIME_WORDS) or n in ("date", "utc"):
+        if any(w == n or n.startswith(w + "_") or n.endswith("_" + w) for w in TIME_WORDS) or n == "utc":
             out.append((orig, _tz_from_name(n)))
     return out
 
@@ -230,6 +230,10 @@ def load_csv(path: str, *, venue_tz: str | None = None, day: date | None = None,
 
     # ---- time column and zone
     tcols = _time_columns(cols)
+    # a separate date column supplies the day for clock-only times
+    date_col = next((cols[n] for n in ("date", "local_date", "date_local", "utc_date", "date_utc") if n in cols), None)
+    if not tcols and date_col:
+        tcols = [(date_col, None)]
     if "time" in colmap:
         tcols = [(col("time"), _tz_from_name(norm(colmap["time"])))]
     if not tcols:
@@ -269,6 +273,11 @@ def load_csv(path: str, *, venue_tz: str | None = None, day: date | None = None,
         rep.notes.append(f"Speed column '{c['speed']}' read as {units} and converted to knots.")
 
     # ---- direction convention
+    # an explicit --map wins over autodetected direction columns
+    if "from" in colmap:
+        c["toward"] = None
+    elif "direction" in colmap:
+        c["toward"] = c["from"] = None
     if c["toward"]:
         dcol, conv = c["toward"], "toward"
     elif c["from"]:
@@ -295,7 +304,13 @@ def load_csv(path: str, *, venue_tz: str | None = None, day: date | None = None,
         if lat is None or lon is None:
             rep.skip("no position")
             continue
-        t = _parse_dt(r.get(tcol, ""), day, naive_tz)
+        rday = day
+        if date_col and date_col != tcol:
+            try:
+                rday = date.fromisoformat((r.get(date_col) or "").strip()[:10])
+            except ValueError:
+                rday = day
+        t = _parse_dt(r.get(tcol, ""), rday, naive_tz)
         if t is None:
             rep.skip("unreadable time")
             continue
