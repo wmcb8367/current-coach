@@ -17,7 +17,7 @@ can be compared, swapped and blended (`models.py`).
 | --- | --- | --- | --- |
 | `global` | tide, wind, air pressure | everywhere; fine (100 to 250 m) on United States coasts, coarse (2 to 4 km) elsewhere | NOAA STOFS-2D-Global, read straight from NOAA's open data (`stofs.py`) |
 | `venue-tide` | tide, coastline, depths | everywhere | our physics model (`physics.py`) on the venue's coast and depths (`venue.py`), driven at its open edges by the global model's tide |
-| `venue-weather` | tide, weather-driven sea level, coastline, depths, optionally local wind and rivers | everywhere | the same physics model driven by the global model's full water level |
+| `venue-weather` | tide, weather-driven sea level, coastline, depths, optionally local wind and rivers | everywhere; experimental | the same physics model, with the global model's weather-driven rise and tilt of the sea added at the open edges |
 | official | tide | where a national service publishes tidal streams, such as Hong Kong | loaded from the service's files (`baseline.py`) |
 | any of the above, corrected | adds what the drifts show | wherever there are drifts | `correction.py` |
 | `blend` | everything its members include | wherever two or more models overlap | weighted mix fitted to drifts (`models.py`) |
@@ -90,12 +90,23 @@ official tidal streams are connected, so nothing here says how accurate any
 model is at a real venue. The correction, the scoring and the blend are
 tested on a simulated venue (`synthetic.py`) whose answer is known.
 
-What the runs do show: in open water the venue physics model agrees with the
-global model that drives it, which checks the plumbing and not the truth.
-Near shore the two differ, as they should, since that is where the global
-model has no detail; which is right there is for the drifts to say. In Hong
-Kong the inshore depths are rough, so expect the physics models to need the
-correction most in harbours and narrow channels until better depths are in.
+What the runs do show (48 hours from 22 November 2026, 200 m cells):
+
+- In open water the tide-only venue model agrees with the global model that
+  drives it: correlation 0.80 in Hong Kong and 0.85 in Biscayne Bay, with a
+  difference of 0.2 to 0.3 knots. That checks the plumbing, not the truth.
+- Near shore the two differ, as they should, since that is where the global
+  model has no detail. Which is right there is for the drifts to say.
+- In Hong Kong the venue model moves almost no water through Victoria
+  Harbour, where a knot or so is expected at spring tides. The inshore
+  depths from open data are rough and the narrow eastern entrance is poorly
+  drawn, so treat the harbour as wrong until better depths are in.
+- `venue-weather` differs from `venue-tide` by about 0.2 knots and agrees
+  less well with the global model (0.60 against 0.75 in a Hong Kong test).
+  The global model's full water level and its tide product do not share
+  quite the same tide, and the difference drives current at the open edges.
+  It stays in the suite as a candidate; do not prefer it without drifts
+  that say so.
 
 Still to build:
 

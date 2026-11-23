@@ -515,11 +515,27 @@ def levels(
 ) -> LevelField:
     """Water levels around a venue from the global model, to drive a venue model.
 
-    ``tide_only`` selects the astronomical tide alone; otherwise the level
-    includes what wind and air pressure do to the sea surface.
+    ``tide_only`` gives the astronomical tide alone. Otherwise the weather's
+    effect on the sea surface is added: the difference between the global
+    model's full water level and its tide, reduced at each hour to a tilted
+    plane across the venue. The plane keeps what a venue can use (the sea
+    standing higher or lower, and tilting, under wind and air pressure) and
+    drops the node-to-node differences of a mesh that is kilometres coarse,
+    which would otherwise drive currents of their own at the open edges.
     """
-    product = "tide_level" if tide_only else "level"
-    if hours_per_run is None:
-        hours_per_run = LAST_RECORD_H if tide_only else 6
-    series = stofs.read(product, stofs.nodes_near(lat, lon, radius_m), start, end, hours_per_run)
-    return LevelField(series.lat, series.lon, series.times, series.values["zeta"])
+    nodes = stofs.nodes_near(lat, lon, radius_m)
+    tide = stofs.read("tide_level", nodes, start, end, LAST_RECORD_H if hours_per_run is None else hours_per_run)
+    field = LevelField(tide.lat, tide.lon, tide.times, tide.values["zeta"])
+    if tide_only:
+        return field
+    full = stofs.read("level", nodes, start, end, 6 if hours_per_run is None else hours_per_run)
+    common, in_tide, in_full = np.intersect1d(tide.times, full.times, return_indices=True)
+    surge = full.values["zeta"][in_full] - tide.values["zeta"][in_tide]
+    good = ~np.isnan(surge).any(axis=0)
+    x, y = to_xy(full.lat[good], full.lon[good], lat, lon)
+    plane = np.column_stack([np.ones(x.size), x, y])
+    coefficients = np.linalg.lstsq(plane, surge[:, good].T, rcond=None)[0]  # (3, times)
+    fx, fy = to_xy(field.lat, field.lon, lat, lon)
+    smooth = (np.column_stack([np.ones(fx.size), fx, fy]) @ coefficients).T
+    keep = np.isin(field.times, common)
+    return LevelField(field.lat, field.lon, field.times[keep], field.level[keep] + smooth)

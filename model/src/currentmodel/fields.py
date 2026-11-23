@@ -158,17 +158,17 @@ def simulate(
     solver.run(start)
 
     times, us, vs = [], [], []
-
-    def keep(s: ShallowWater) -> None:
-        u, v = s.centre_velocity()
-        times.append(s.time)
+    steps = int(np.floor((end - start) / sample_s + 1e-9))
+    for k in range(steps + 1):
+        # Frames carry their nominal time; the solver is within one time step (seconds) of it.
+        nominal = start + k * sample_s
+        solver.run(nominal)
+        u, v = solver.centre_velocity()
+        times.append(nominal)
         us.append(u.astype("f4"))
         vs.append(v.astype("f4"))
         if progress is not None:
-            progress((s.time - start) / (end - start))
-
-    keep(solver)
-    solver.run(end, sample_every=sample_s, on_sample=keep)
+            progress(k / max(steps, 1))
     return GriddedField(grid, np.array(times), np.array(us), np.array(vs))
 
 

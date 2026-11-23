@@ -170,3 +170,36 @@ def test_currents_become_a_model_with_dry_nodes_dropped():
     assert model.times[1] - model.times[0] == 900.0
     u, v = model.velocity(22.25, 114.25, start + 6.2 * HOUR)
     assert np.isfinite(u) and np.isfinite(v)
+
+
+def test_weather_levels_keep_the_tilt_of_the_surge_and_drop_node_noise():
+    rng = np.random.default_rng(3)
+    noise = rng.normal(0.0, 0.05, 50)
+
+    class Run(_FakeRun):
+        def __init__(self, cycle, product, mesh):
+            super().__init__(cycle)
+            self.product, self.mesh = product, mesh
+
+        def records(self, name, records, nodes):
+            hours = (self.times()[records] - _utc(2026, 11, 22, 0).timestamp()) / HOUR
+            tide = np.outer(np.cos(2 * np.pi * hours / 12.42), np.ones(nodes.size))
+            if self.product == "tide_level":
+                return tide
+            x, y = stofs.to_xy(self.mesh[0][nodes], self.mesh[1][nodes], 22.25, 114.25)
+            return tide + 0.2 + 2e-6 * x - 1e-6 * y + noise[nodes]  # the sea raised and tilted, plus mesh noise
+
+    class Fake(_FakeStofs):
+        def _open_product(self, product, cycle):
+            return Run(cycle, product, self._mesh)
+
+    fake = Fake(latest=_utc(2026, 11, 22, 12))
+    fake._mesh = (rng.uniform(22.0, 22.5, 50), rng.uniform(114.0, 114.5, 50), np.full(50, 10.0))
+    start = _utc(2026, 11, 22, 0).timestamp()
+    tide = stofs.levels(fake, 22.25, 114.25, 80e3, start, start + 12 * HOUR, tide_only=True)
+    weather = stofs.levels(fake, 22.25, 114.25, 80e3, start, start + 12 * HOUR)
+    surge = weather.level - tide.level[np.isin(tide.times, weather.times)]
+    x, y = stofs.to_xy(weather.lat, weather.lon, 22.25, 114.25)
+    wanted = 0.2 + 2e-6 * x - 1e-6 * y
+    assert np.abs(surge - wanted).max() < 0.03  # the plane, with the 5 cm node noise averaged away
+    assert np.abs(surge - surge[0]).max() < 1e-9  # and steady, as the made-up surge is
