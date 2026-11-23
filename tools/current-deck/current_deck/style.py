@@ -4,7 +4,7 @@
 coach boat (1 Nov 2026): black page, dark-green map panels with green hairline
 borders, cyan letter-spaced kicker, lime "SailBoss" wordmark, white tail dots and
 bold mono labels. Arrows are coloured on one continuous strength gradient
-(periwinkle through green and yellow to magenta) instead of that slide's four separate classes.
+(cyan for weak through to lime for strong) instead of that slide's four separate classes.
 'm2x' swaps in the Current Coach app palette (slate-950, cyan-400).
 """
 
@@ -37,8 +37,9 @@ class Theme:
 
 
 # One continuous strength gradient, weakest to strongest, in the manner of a
-# weather-map speed key: periwinkle, blue, teal, green, yellow, orange, magenta.
-RAMP = ("#7480E0", "#4F9BE0", "#3FC4B0", "#5FD35A", "#D9D44A", "#F0963C", "#E0457A")
+# weather-map speed key, kept to two colours: dim blue-cyan for weak, through
+# cyan, to bright lime for strong.
+RAMP = ("#2F6FB0", "#55CFF5", "#28FE14")
 
 THEMES = {
     "sailboss": Theme(

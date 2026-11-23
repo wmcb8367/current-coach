@@ -490,7 +490,8 @@ def header(fig, th: Theme, kicker: str, title: str):
 def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: str, title: str,
                zone_label: str, zoom: MapFrame, land, lifetime: float = 60, fade: float = 20,
                step_min: float | None = None, frame_ms: int = 90, scale: float = 0.96, max_frames: int = 400,
-               style: str = "arrows", reach_m: float = 1000.0, particles: int = 1400):
+               style: str = "arrows", reach_m: float = 1000.0, particles: int = 1400,
+               particle_speed: float = 1.0):
     """Animated scrubber: each reading appears at its time and is gone `lifetime` minutes later.
 
     style="arrows" draws one arrow per reading. style="particles" draws drifting particles
@@ -563,7 +564,7 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
     if style == "particles":
         fade = min(fade, lifetime / 6) if not math.isinf(lifetime) else fade
         from .particles import ParticleField, reach_outline
-        field = ParticleField(zoom, units, reach_m=reach_m, n=particles)
+        field = ParticleField(zoom, units, reach_m=reach_m, n=particles, speed_scale=particle_speed)
     dyn, frames = [], []
     for i in range(n):
         for a in dyn:
@@ -608,7 +609,8 @@ def render_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: 
 
 def render_average_gif(ms: list[Measurement], th: Theme, units: Units, path, *, kicker: str, title: str,
                        zone_label: str, zoom: MapFrame, land, reach_m: float = 1000.0, frames_n: int = 70,
-                       frame_ms: int = 90, scale: float = 0.96, particles: int = 2400):
+                       frame_ms: int = 90, scale: float = 0.96, particles: int = 2400,
+                       particle_speed: float = 1.0):
     """Looping particle view of the whole day: every reading counts for the whole animation.
 
     Where readings overlap, the flow is their distance-weighted average. Same bounded reach as
@@ -657,7 +659,7 @@ def render_average_gif(ms: list[Measurement], th: Theme, units: Units, path, *, 
              "Every reading of the day at once. Where readings overlap, speed and direction are averaged, "
              "whatever the time between them.", color=th.faint, fontsize=11, fontfamily=th.mono, va="center")
 
-    field = ParticleField(zoom, units, reach_m=reach_m, n=particles)
+    field = ParticleField(zoom, units, reach_m=reach_m, n=particles, speed_scale=particle_speed)
     for _ in range(field.life):          # warm up so the first frame is already full
         field.step(shown)
     frames, lc = [], None

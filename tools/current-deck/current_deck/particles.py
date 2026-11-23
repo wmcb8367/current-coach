@@ -63,13 +63,15 @@ class ParticleField:
     """Windy-style particles advected through the bounded field."""
 
     def __init__(self, frame, units, *, reach_m: float = 1000.0, n: int = 2000, trail: int = 8,
-                 life: int = 90, seed: int = 7, px_per_frame: float = 0.008, per_reading: int = 110):
+                 life: int = 90, seed: int = 7, px_per_frame: float = 0.015, per_reading: int = 110,
+                 speed_scale: float = 1.0):
         self.f, self.units = frame, units
         self.reach = reach_m / M_PER_NM
         self.n, self.trail, self.life, self.per_reading = n, trail, life, per_reading
         self.rng = np.random.default_rng(seed)
-        # distance moved per frame by a current at the top of the colour scale
-        self.move = px_per_frame * frame.width / units.vmax_kt
+        # distance moved per frame by a current at the top of the colour scale. Movement is strictly
+        # proportional to speed, so a current twice as strong drifts twice as far per frame.
+        self.move = px_per_frame * speed_scale * frame.width / units.vmax_kt
         self.pos = np.full((n, 2), np.nan)
         self.hist = np.full((n, trail, 2), np.nan)
         self.spd_hist = np.zeros((n, trail))

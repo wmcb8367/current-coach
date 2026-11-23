@@ -4,7 +4,7 @@ Turns current-measurement CSVs (Current Coach app exports, coach-boat logs, or a
 
 1. **Slide 1, an animated GIF time scrubber.** Each current arrow appears at its reading time and fades out an hour later, while a playhead runs along a timeline of the day.
 2. **Slide 2, the all-day average.** A looping particle view of every reading of the day averaged together.
-3. **One slide per hour of the day** (venue local time). Each has a locator map with the race area boxed and a zoomed map of that hour's readings. Arrows are coloured on one continuous strength gradient (periwinkle and blue for weak, through green and yellow, to orange and magenta for strong, shown in a slim key on the map) and labelled `HH:MM · speed` (the unit is on the key). Every arrow keeps a visible tail: length is a fixed base plus an amount proportional to speed.
+3. **One slide per hour of the day** (venue local time). Each has a locator map with the race area boxed and a zoomed map of that hour's readings. Arrows are coloured on one continuous strength gradient (two colours: blue-cyan for weak through to bright lime for strong, shown in a slim key on the map) and labelled `HH:MM · speed` (the unit is on the key). Every arrow keeps a visible tail: length is a fixed base plus an amount proportional to speed.
 
 The look copies the SailBoss current-readings slide made for Luther's coach boat (black page, dark green map panels, cyan kicker, lime wordmark, white-dotted arrows). Pass `--theme m2x` to use the Current Coach app colours instead.
 
@@ -74,7 +74,7 @@ The particles follow a field interpolated from the readings that are live at tha
 - Where the reaches of two or more live readings overlap, speed is the weighted mean and direction is the weighted mean of unit vectors (so 350° and 010° average to 000°).
 - A reading stops contributing when it fades off the scrubber (`--lifetime`, `--fade`).
 
-Particle speed on screen is scaled for legibility, not real time. Colour is the interpolated speed on the same gradient as the key.
+Particle drift on screen is proportional to current speed: a current twice as strong moves twice as far per frame and leaves a trail twice as long. The overall rate is scaled for legibility, not real time; `--particle-speed 1.5` speeds the whole animation up and `0.5` slows it. Colour is the interpolated speed on the same gradient as the key.
 
 ## Coastline
 
@@ -126,6 +126,7 @@ Times with no date (such as `10:45` in a coach log) take the date in the file na
 --gif-style arrows|particles   slide-1 animation style (default arrows)
 --reach DISTANCE        how far a reading's current may be shown in the particle views: 800, 800m, 1.5km, 0.5nm (default 1000m)
 --lifetime TIME         how long a reading stays on the scrubber: 90, 90m, 3h, 1h30m, or all (default 60m for arrows, 3h for particles)
+--particle-speed X      multiplier on particle drift (default 1); drift is always proportional to current speed
 --no-day-average        leave out the all-day average slide
 --fade MIN              minutes of fade-out at the end of that time (default 20)
 --step MIN              GIF minutes per frame (default: about 150 frames)

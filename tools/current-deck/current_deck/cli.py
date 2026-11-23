@@ -63,6 +63,9 @@ def parse_args(argv=None):
     p.add_argument("--day-average", action=argparse.BooleanOptionalAction, default=True,
                    help="add a slide with a looping particle view of all the day's readings averaged together "
                         "(default on; --no-day-average to skip)")
+    p.add_argument("--particle-speed", type=float, default=1.0, metavar="X",
+                   help="multiplier on how fast particles drift (default 1). Drift is always proportional to "
+                        "current speed; this only scales the whole animation.")
     p.add_argument("--fade", type=float, default=20, help="minutes of fade-out at the end of its life (default 20)")
     p.add_argument("--step", type=float, help="GIF minutes per frame (default: about 150 frames)")
     p.add_argument("--frame-ms", type=int, default=90, help="GIF milliseconds per frame (default 90)")
@@ -136,13 +139,14 @@ def main(argv=None) -> int:
     gif = assets / "scrubber.gif"
     ginfo = render_gif(ms, th, units, gif, kicker=kicker, title=title, zone_label=zl, zoom=zoom, land=land,
                        lifetime=a.lifetime, fade=a.fade, step_min=a.step, frame_ms=a.frame_ms,
-                       style=a.gif_style, reach_m=a.reach)
+                       style=a.gif_style, reach_m=a.reach, particle_speed=a.particle_speed)
 
     avg, avg_info = None, None
     if a.day_average:
         avg = assets / "day_average.gif"
         avg_info = render_average_gif(ms, th, units, avg, kicker=kicker, title=title, zone_label=zl, zoom=zoom,
-                                      land=land, reach_m=a.reach, frame_ms=a.frame_ms)
+                                      land=land, reach_m=a.reach, frame_ms=a.frame_ms,
+                                      particle_speed=a.particle_speed)
 
     panels = {}
     for hour, group in hour_groups(ms):
