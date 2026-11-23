@@ -10,11 +10,10 @@ the answer through their neighbours and flatter it.
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Callable, Sequence
 
 import numpy as np
 
-from .baseline import TidalStreamField
 from .correction import Conditions, Hyper, VenueCorrection
 from .geo import KNOT_MS, angle_diff_deg, speed_dir_from_uv
 from .measurements import Drift, as_arrays
@@ -44,7 +43,7 @@ def score(pred_u, pred_v, obs_u, obs_v) -> dict[str, float]:
     return result
 
 
-def score_baseline(baseline: TidalStreamField, drifts: Sequence[Drift]) -> dict[str, float]:
+def score_baseline(baseline, drifts: Sequence[Drift]) -> dict[str, float]:
     """How well the uncorrected baseline matches the drifts."""
     cols = as_arrays(drifts)
     u, v = baseline.velocity(cols["lat"], cols["lon"], cols["time"])
@@ -58,18 +57,24 @@ def day_labels(drifts: Sequence[Drift], utc_offset_hours: float = 8.0) -> np.nda
 
 
 def cross_validate_by_day(
-    baseline: TidalStreamField,
+    baseline,
     drifts: Sequence[Drift],
     conditions: Conditions | None = None,
     hyper: Hyper | None = None,
     utc_offset_hours: float = 8.0,
     optimise: bool | None = None,
+    baseline_for: Callable[[Sequence[Drift]], object] | None = None,
 ) -> dict:
     """Leave-one-day-out validation of the venue correction.
 
     Each day's drifts are predicted by a model fitted to all the other days.
     Returns the baseline's metrics, the model's metrics, the skill, and how
     often the truth fell inside the model's own two-sigma error bar.
+
+    ``baseline`` is any current model (anything with ``velocity`` and
+    ``rate``). If the baseline itself is fitted to drifts, as a blend of
+    models is, pass ``baseline_for``: it is called with each fold's training
+    drifts so the held-out day never informs the baseline that predicts it.
     """
     drifts = list(drifts)
     days = day_labels(drifts, utc_offset_hours)
@@ -78,12 +83,16 @@ def cross_validate_by_day(
     cols = as_arrays(drifts)
     pred_u = np.full(len(drifts), np.nan)
     pred_v = np.full(len(drifts), np.nan)
+    base_u = np.full(len(drifts), np.nan)
+    base_v = np.full(len(drifts), np.nan)
     sigma = np.full(len(drifts), np.nan)
     for day in np.unique(days):
         held = days == day
         train = [d for d, h in zip(drifts, held) if not h]
+        fold_baseline = baseline_for(train) if baseline_for is not None else baseline
+        base_u[held], base_v[held] = fold_baseline.velocity(cols["lat"][held], cols["lon"][held], cols["time"][held])
         try:
-            model = VenueCorrection(baseline, hyper).fit(train, conditions, optimise=optimise)
+            model = VenueCorrection(fold_baseline, hyper).fit(train, conditions, optimise=optimise)
         except ValueError:
             continue
         p = model.predict(cols["lat"][held], cols["lon"][held], cols["time"][held], conditions)
@@ -91,7 +100,6 @@ def cross_validate_by_day(
         # Predicting a new drift also carries the scatter no term explains.
         sigma[held] = np.sqrt(p.sigma**2 + model.hyper.nugget**2)
 
-    base_u, base_v = baseline.velocity(cols["lat"], cols["lon"], cols["time"])
     scored = ~np.isnan(pred_u)
     base = score(base_u[scored], base_v[scored], cols["u"][scored], cols["v"][scored])
     model_score = score(pred_u[scored], pred_v[scored], cols["u"][scored], cols["v"][scored])
