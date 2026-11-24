@@ -156,3 +156,16 @@ def test_parse_distance():
     assert parse_distance("0.5nm") == pytest.approx(926)
     with pytest.raises(ValueError):
         parse_distance("far")
+
+
+def test_zone_named_time_columns_and_true_deg(tmp_path):
+    """Newer app export: time columns named only for their zone, FROM_true_deg / TOWARD_true_deg, valid."""
+    f = tmp_path / "pull_2026_11_24.csv"
+    f.write_text(
+        "id,UTC,Hong_Kong,Pacific,speed_knots,FROM_true_deg,TOWARD_true_deg,latitude,longitude,confidence,valid\n"
+        "a,2026-11-24T02:00:00.000Z,2026-11-24T10:00:00+08:00,2026-11-23T18:00:00-08:00,0.5,5,185,22.28,114.32,90,True\n"
+        "b,2026-11-24T02:30:00.000Z,2026-11-24T10:30:00+08:00,2026-11-23T18:30:00-08:00,0.4,350,170,22.29,114.33,90,False\n")
+    ms, rep, zone = load_csv(str(f))
+    assert zone == "Asia/Hong_Kong"
+    assert len(ms) == 1 and rep.skipped
+    assert abs(ms[0].toward_deg - 185) < 1e-6

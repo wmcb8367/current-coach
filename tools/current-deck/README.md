@@ -91,10 +91,10 @@ Column names are matched case-insensitively, ignoring punctuation. Any field can
 
 | Field | Recognised names (first match wins) |
 |---|---|
-| time | any column named like `time`, `time_*`, `*_time`, `timestamp`, `datetime`. A zone in the name (`time_hkt`, `time_hong_kong`, `time_utc`, `time_pacific`, ...) is used for times that carry no offset. |
+| time | any column named like `time`, `time_*`, `*_time`, `timestamp`, `datetime`. A zone in the name (`time_hkt`, `time_hong_kong`, `time_utc`, `time_pacific`, ...) is used for times that carry no offset. Columns named only for a zone (`UTC`, `Hong_Kong`, `Pacific`) count as time columns too. |
 | lat / lon | `latitude`, `lat` / `longitude`, `lon`, `lng`, `long` |
 | speed | `current_kt`, `speed_knots`, `speed_kt`, `current_speed`, ... Units come from the name: `*_ms`/`*_m_s` = m/s, `*_cm_s` = cm/s, `*_m_min` = m/min, anything else = knots. Override with `--speed-units`. |
-| direction | toward: `direction_toward_deg`, `current_toward_deg`, `set`, `set_deg`, ...; from: `current_from_deg`, `direction_from_deg`, `from_deg`, .... A bare `direction` column is read as "toward" unless you pass `--dir-convention from`. |
+| direction | toward: `direction_toward_deg`, `current_toward_deg`, `set`, `set_deg`, `TOWARD_true_deg`, ...; from: `FROM_true_deg`, `current_from_deg`, `direction_from_deg`, `from_deg`, .... A bare `direction` column is read as "toward" unless you pass `--dir-convention from`. |
 | note | `position_note`, `note`, `location`, `label`, ... joined with `race`/`leg` when present |
 | valid | `is_valid`. Rows marked false are skipped unless `--keep-invalid` is given. |
 | wind (optional) | `wind_from_deg`/`wind_direction`, `wind_kt`/`wind_speed`. These go in the speaker notes. |

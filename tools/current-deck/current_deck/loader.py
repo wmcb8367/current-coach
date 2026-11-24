@@ -30,11 +30,11 @@ CANDIDATES = {
     "toward": [
         "current_toward_deg", "direction_toward_deg", "current_set_deg", "set_deg",
         "current_to_deg", "toward_deg", "flow_direction", "flow_dir", "set",
-        "direction_to", "dir_to", "toward",
+        "direction_to", "dir_to", "toward_true_deg", "toward_deg_true", "to_true_deg", "set_true_deg", "toward",
     ],
     "from": [
         "current_from_deg", "direction_from_deg", "from_deg", "from_direction",
-        "direction_from", "dir_from", "from",
+        "direction_from", "dir_from", "from_true_deg", "from_deg_true", "from",
     ],
     "direction": ["current_direction", "current_dir", "direction_deg", "direction", "dir", "heading"],
     "note": ["position_note", "note", "notes", "location", "position", "label", "name", "mark"],
@@ -138,7 +138,8 @@ def _time_columns(cols: dict) -> list[tuple[str, str | None]]:
     """[(original column, zone hint or None)] for columns that look like times."""
     out = []
     for n, orig in cols.items():
-        if any(w == n or n.startswith(w + "_") or n.endswith("_" + w) for w in TIME_WORDS) or n == "utc":
+        if any(w == n or n.startswith(w + "_") or n.endswith("_" + w) for w in TIME_WORDS) \
+                or (n in TZ_HINTS and n != "z"):      # a column named only for its zone: UTC, Hong_Kong, Pacific
             out.append((orig, _tz_from_name(n)))
     return out
 
