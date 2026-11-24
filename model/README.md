@@ -20,6 +20,7 @@ can be compared, swapped and blended (`models.py`).
 | `venue-weather` | tide, weather-driven sea level, coastline, depths, optionally local wind and rivers | everywhere; experimental | the same physics model, with the global model's weather-driven rise and tilt of the sea added at the open edges |
 | official | tide | where a national service publishes tidal streams, such as Hong Kong | loaded from the service's files (`baseline.py`) |
 | steady drift of a model | whatever keeps the water moving once the tide is averaged out: the season's coastal current, wind over days, rivers | wherever the parent model covers | `Subtidal` in `models.py`; add it to a tide model with `Blend` |
+| `WindDrift` | the surface water going downwind at a fraction of the wind speed | everywhere | `models.py`, with wind from `wind.py`; give it a weight with `Blend` |
 | any of the above, corrected | adds what the drifts show | wherever there are drifts | `correction.py` |
 | `blend` | everything its members include | wherever two or more models overlap | weighted mix fitted to drifts (`models.py`) |
 
@@ -92,38 +93,44 @@ streams are connected.
 
 ### First comparison with measured current
 
-42 coach-boat readings on six days, 15 to 23 November 2026, in the race
-area east of Clearwater Bay, Hong Kong (two more were set aside: one at 12
-knots and one 14 seconds long). Mean measured speed 0.33 knots. Vector
-error of each model, as built and with the correction fitted on the other
-days:
+81 readings from three boats on seven days, 15 to 24 November 2026, in the
+race area east of Clearwater Bay, Hong Kong. Two more were set aside (one
+at 12 knots, one 14 seconds long) and six that appeared in two files were
+counted once (`drop_repeats`). Mean measured speed 0.31 knots. Vector
+error of each model as built:
 
-| Model | As built | Corrected, held-out days |
-| --- | --- | --- |
-| `venue-tide` | 0.42 kn | 0.40 kn |
-| no current at all | 0.39 kn | 0.38 kn |
-| `venue-weather` | 0.33 kn | 0.37 kn |
-| `global` | 0.32 kn | 0.29 kn |
-| steady drift of `global` | 0.32 kn | 0.28 kn |
+| Model | Error |
+| --- | --- |
+| `venue-tide` | 0.39 kn |
+| no current at all | 0.36 kn |
+| `venue-weather` | 0.31 kn |
+| `global` | 0.30 kn |
+| steady drift of `global` (`Subtidal`) | 0.29 kn |
+| 2% of the wind, nothing else (`WindDrift`) | 0.24 kn |
+| blend of steady drift and wind, weights from the other days | 0.23 kn |
 
-- The current there on those days was mostly not tide. Within each day it
-  held one direction for the hours sampled, south-west on the three
-  windiest days. The best simple description is the global model's steady
-  drift (the winter monsoon's coastal current) plus 2% of the wind speed,
-  downwind.
-- The tide-only physics model is worse than assuming no current. Its tide
-  swings north and south there and explains none of what was measured.
-  Whether its tide is wrong or only small beside the drift, these readings
-  cannot say: most were taken near neaps, and the spring-tide day near
-  slack water.
-- Every model is too weak, by 0.15 to 0.2 knots. Directions are within 20
-  to 30 degrees for readings above 0.3 knots.
-- Even the best fit leaves 0.25 knots unexplained. On 23 November the
-  current was 0.7 knots in open water and 0.1 to 0.3 knots close under the
-  land a few kilometres away, which no model here resolves.
+- The readings follow the wind. On both race days the water went
+  downwind, west-south-west under an easterly and south under a
+  northerly. A blend of 0.8 of the global model's steady drift and 1.6% of
+  the wind speed, with both numbers fitted on the other six days, predicts
+  a held-out day to 0.23 knots, with no bias in speed and directions
+  within 17 degrees.
+- How much of that is water and how much is the drifter being blown along
+  is not known. It decides what the number means for a keelboat.
+- The tide-only physics model is worse than assuming no current, and
+  adding either tide model to the blend gains nothing. All seven days were
+  sampled around the middle of the day; these readings cannot yet say
+  what the tide does there.
+- The drift correction (`correction.py`) made the blend worse on held-out
+  days (0.28 knots). It has more freedom than seven days can pin down,
+  and needs to start simpler when days are few.
+- The wind from NOAA's weather model matched 43 winds logged on the water
+  to 2 knots and 9 degrees on average.
 - The screen for bad readings picked out the 12 knot reading by itself.
+- Two boats out on the same day differ: on 24 November one averaged 0.46
+  knots and the other 0.25.
 
-Six days in one season is a small sample. Nothing above is settled.
+Seven days in one season and one wind regime is a small sample.
 
 What the first runs showed before any readings (48 hours from 22 November 2026, 200 m cells):
 

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from currentmodel.geo import KNOT_MS, speed_dir_from_uv
-from currentmodel.measurements import load_readings_csv
+from currentmodel.measurements import drop_repeats, load_readings_csv
 from currentmodel.wind import field_ranges
 
 
@@ -60,3 +60,20 @@ def test_wind_fields_are_found_in_a_grib_index():
     assert field_ranges(index) == {"UGRD": (1000, 2500), "VGRD": (2500, 4000)}
     with pytest.raises(ValueError):
         field_ranges(index, level="80 m above ground")
+
+
+def test_the_same_reading_in_two_exports_is_kept_once(tmp_path):
+    first = tmp_path / "pull.csv"
+    first.write_text(
+        "id,UTC,speed_knots,FROM_true_deg,TOWARD_true_deg,latitude,longitude,confidence,valid\n"
+        "abc1,2026-11-19T05:07:57.699Z,0.3719,1.2143,181.2143,22.26734275,114.32634917,95.15,True\n"
+        "abc2,2026-11-19T05:11:50.527Z,0.2339,334.7037,154.7037,22.26661328,114.32644247,78.64,True\n"
+    )
+    second = tmp_path / "table.csv"
+    second.write_text(
+        "time_hong_kong,speed_knots,flow_from_degrees,latitude,longitude\n"
+        "2026-11-19 13:07:58 HKT,0.3719,1.2,22.267343,114.326349\n"
+    )
+    drifts = load_readings_csv(first, user="a") + load_readings_csv(second, user="a")
+    assert [d.id for d in drifts[:2]] == ["abc1", "abc2"]
+    assert len(drifts) == 3 and len(drop_repeats(drifts)) == 2

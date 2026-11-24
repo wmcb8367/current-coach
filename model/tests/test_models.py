@@ -122,3 +122,24 @@ def test_subtidal_keeps_the_steady_drift_and_drops_the_tide():
     # Too close to the end of the record for a whole lunar day: no answer.
     u, _ = steady.velocity(22.3, 114.3, 4.9 * 86_400.0)
     assert np.isnan(u)
+
+
+def test_a_blend_finds_how_much_of_the_wind_the_surface_follows():
+    from currentmodel.correction import Conditions
+    from currentmodel.measurements import Drift
+    from currentmodel.models import Blend, WindDrift
+
+    times = np.arange(0.0, 6 * 86_400.0, 3600.0)
+    conditions = Conditions(times, 8.0 * np.cos(times / 40_000.0), 6.0 * np.sin(times / 55_000.0))
+    steady = FunctionModel(lambda lat, lon, t: (np.full(np.shape(t), -0.10), np.full(np.shape(t), -0.05)), 22.3, 114.3)
+    wind = WindDrift(conditions, 22.3, 114.3)
+    when = np.linspace(3600.0, 5 * 86_400.0, 40)
+    wind_u, wind_v = conditions.wind(when)
+    drifts = [
+        Drift(str(i), "a", t, 22.3, 114.3, -0.10 + 0.03 * wu, -0.05 + 0.03 * wv, 0.02, 200.0)
+        for i, (t, wu, wv) in enumerate(zip(when, wind_u, wind_v))
+    ]
+    blend = Blend.fit([steady, wind], drifts, ["steady", "wind"])
+    # The steady flow is taken whole and the wind model, written for 2%, is scaled to 3%.
+    assert blend.weights == pytest.approx([1.0, 1.5], abs=1e-6)
+    assert np.isnan(wind.velocity(22.3, 114.3, times[-1] + 10.0)[0])

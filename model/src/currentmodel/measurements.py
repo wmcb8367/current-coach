@@ -134,10 +134,17 @@ def drifts_from_records(records: Iterable[dict], default_user: str = "unknown") 
 
 # Column names seen in spreadsheets of readings, by what they hold.
 _CSV_COLUMNS = {
-    "time": ("time_utc", "timestamp", "time", "time_hong_kong", "time_hkt", "time_local"),
+    "id": ("id", "client_id", "clientid"),
+    "time": ("time_utc", "utc", "measured_at_utc", "timestamp", "time", "time_hong_kong", "time_hkt", "time_local"),
     "speed_kn": ("speed_knots", "current_kt", "current_kn", "current_knots", "speed_kt", "speed_kn"),
-    "from_deg": ("flow_from_degrees", "current_from_deg", "from_direction_degrees", "from_deg"),
-    "to_deg": ("set_toward_degrees", "set_deg", "current_to_deg", "to_deg"),
+    "from_deg": (
+        "flow_from_degrees", "current_from_deg", "direction_from_deg", "direction_from_degrees",
+        "from_true_deg", "from_direction_degrees", "from_deg",
+    ),
+    "to_deg": (
+        "set_toward_degrees", "direction_toward_deg", "direction_toward_degrees", "toward_true_deg",
+        "set_deg", "current_to_deg", "to_deg",
+    ),
     "lat": ("latitude", "lat"),
     "lon": ("longitude", "lon", "lng"),
     "duration": ("duration_seconds", "duration_s"),
@@ -226,7 +233,7 @@ def load_readings_csv(
             extra["confidence"] = float(cell(row, "confidence"))
         drifts.append(
             Drift(
-                id=f"{stem}:{number}",
+                id=cell(row, "id") or f"{stem}:{number}",
                 user_id=user,
                 time=_csv_time(cell(row, "time"), date, utc_offset_hours) + half,
                 lat=float(lat0 + np.degrees(float(v) * half / EARTH_RADIUS_M)),
@@ -241,6 +248,31 @@ def load_readings_csv(
             )
         )
     return drifts
+
+
+def drop_repeats(drifts: Sequence[Drift], within_s: float = 5.0, within_m: float = 30.0) -> list[Drift]:
+    """The drifts with repeats of the same reading removed, in time order.
+
+    The same reading often arrives twice, in two exports or two pulls, with
+    its numbers rounded differently. Two drifts are the same reading when
+    their times, positions and velocities all agree closely; the first one
+    met is kept.
+    """
+    kept: list[Drift] = []
+    for d in sorted(drifts, key=lambda d: d.time):
+        repeat = False
+        for other in reversed(kept):
+            if d.time - other.time > within_s:
+                break
+            apart = EARTH_RADIUS_M * np.hypot(
+                np.radians(d.lat - other.lat), np.radians(d.lon - other.lon) * np.cos(np.radians(d.lat))
+            )
+            if apart <= within_m and np.hypot(d.u - other.u, d.v - other.v) <= 0.01:
+                repeat = True
+                break
+        if not repeat:
+            kept.append(d)
+    return kept
 
 
 def as_arrays(drifts: Sequence[Drift]) -> dict[str, np.ndarray]:

@@ -106,6 +106,37 @@ class Subtidal:
         return (u1 - u0) / (2 * half_window_s), (v1 - v0) / (2 * half_window_s)
 
 
+class WindDrift:
+    """The surface water going downwind at a fixed fraction of the wind speed.
+
+    Wind drags the top of the water along with it, and a drifter at the
+    surface goes with that layer. Two percent of the wind speed is a common
+    figure; the right one depends on how deep the drifter sits and how much
+    of it is in the wind, so put this model in a :class:`Blend` and let the
+    drifts set its weight. The wind is one series for the whole venue
+    (:class:`~currentmodel.correction.Conditions`, for instance from
+    :func:`~currentmodel.wind.gfs_wind`); outside its span the answer is NaN.
+    """
+
+    def __init__(self, conditions: Conditions, lat0: float, lon0: float, fraction: float = 0.02):
+        self.conditions, self.fraction = conditions, float(fraction)
+        self.lat0, self.lon0 = float(lat0), float(lon0)
+
+    def velocity(self, lat, lon, time):
+        lat, lon, time = np.broadcast_arrays(
+            np.asarray(lat, dtype=float), np.asarray(lon, dtype=float), np.asarray(time, dtype=float)
+        )
+        wind_u, wind_v = self.conditions.wind(time)
+        inside = (time >= self.conditions.times[0]) & (time <= self.conditions.times[-1])
+        return np.where(inside, self.fraction * wind_u, np.nan), np.where(inside, self.fraction * wind_v, np.nan)
+
+    def rate(self, lat, lon, time, half_window_s: float = 1800.0):
+        time = np.asarray(time, dtype=float)
+        u0, v0 = self.velocity(lat, lon, time - half_window_s)
+        u1, v1 = self.velocity(lat, lon, time + half_window_s)
+        return (u1 - u0) / (2 * half_window_s), (v1 - v0) / (2 * half_window_s)
+
+
 class Blend:
     """A weighted sum of models. It has an answer only where every member has one."""
 
