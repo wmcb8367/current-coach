@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "current-deck"
+version = "0.1.0"
+description = "Turn current-measurement CSVs into a SailBoss slide deck (animated scrubber + hourly maps)"
+requires-python = ">=3.11"
+dependencies = ["matplotlib>=3.8", "numpy>=1.26", "pillow>=10.0", "python-pptx>=1.0", "basemap-data-hires>=1.3"]
+
+[project.scripts]
+current-deck = "current_deck.cli:main"
+
+[tool.setuptools]
+packages = ["current_deck"]
+
+[tool.setuptools.package-data]
+current_deck = ["fonts/*"]
