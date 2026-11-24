@@ -111,3 +111,27 @@ def test_long_csv_round_trip(tmp_path):
     u, v = field.velocity(22.28, 114.17, field.times[0] + 1800.0)
     assert float(u) == pytest.approx(0.75 * KNOT_MS, rel=1e-6)
     assert float(v) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_hong_kong_tidal_stream_file_is_read_in_hong_kong_time(tmp_path):
+    import datetime as dt
+
+    from currentmodel.baseline import hk_tidal_stream_url, load_hk_tidal_streams
+    from currentmodel.geo import KNOT_MS
+
+    slots = [f"{h:02d}{m:02d}" for h in range(24) for m in (0, 15, 30, 45)]
+    header = "LATITUDE,LONGITUDE,MODE,DATE," + ",".join(f"{s}-KNOT,{s}-DEG" for s in slots)
+    lines = [header]
+    for lat, lon, toward in ((22.27, 114.32, 90), (22.28, 114.33, 180)):
+        for day in ("2026-11-01", "2026-11-02"):
+            lines.append(f"{lat},{lon},S,{day}," + ",".join(f"1.00,{toward}" for _ in slots))
+    path = tmp_path / "All_Points.csv"
+    path.write_text("\n".join(lines) + "\n")
+    field = load_hk_tidal_streams(path)
+    # Midnight in Hong Kong on 1 November is 16:00 UTC the day before.
+    assert field.times[0] == dt.datetime(2026, 10, 31, 16, tzinfo=dt.timezone.utc).timestamp()
+    assert field.times.size == 192 and np.all(np.diff(field.times) == 900.0)
+    u, v = field.velocity(22.27, 114.32, field.times[10])
+    assert u == pytest.approx(KNOT_MS, rel=1e-2) and abs(v) < 0.02 * KNOT_MS
+    assert hk_tidal_stream_url(2026, 11).endswith("All_Points_2026-11-01_2026-11-30_Surface.zip")
+    assert hk_tidal_stream_url(2026, 2, surface=False).endswith("All_Points_2026-02-01_2026-02-28_Average.zip")

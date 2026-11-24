@@ -104,6 +104,12 @@ class ShallowWater:
         (advection) terms fade to zero. Prescribing the surface height at an
         open edge leaves the flow along it unconstrained, and with advection
         that grows into jets; fading it out there is the usual cure.
+
+    Open edges come in two kinds (see :meth:`set_boundary`). With the surface
+    height alone the edge is clamped: simple, but waves made inside the venue
+    bounce off it and whatever current the sea outside carries is lost. With
+    the outside current as well the edge follows Flather's condition, which
+    lets those waves leave and brings the outside current in.
     """
 
     def __init__(
@@ -160,6 +166,23 @@ class ShallowWater:
         self.time = 0.0
         self._source = np.zeros((ny, nx))
         self._boundary: Callable[[float], np.ndarray | float] | None = None
+        self._boundary_flow: Callable[[float], tuple[np.ndarray, np.ndarray]] | None = None
+
+        # For Flather's condition: the face through which each open-sea cell
+        # meets the venue, and which way is out. A cell with no such face
+        # (a corner, or one facing land) stays clamped.
+        rows, cols = np.nonzero(self.boundary_cells)
+        west, east, south = cols == 0, cols == nx - 1, (rows == 0) & (cols > 0) & (cols < nx - 1)
+        north = (rows == ny - 1) & (cols > 0) & (cols < nx - 1)
+        self._edge_rows, self._edge_cols = rows, cols
+        self._edge_on_u = west | east
+        self._edge_face_row = np.where(north, ny - 1, np.where(south, 1, rows))
+        self._edge_face_col = np.where(east, nx - 1, np.where(west, 1, cols))
+        self._edge_out = np.where(east | north, 1.0, -1.0)
+        live_u = self._umask[rows, np.clip(self._edge_face_col - 1, 0, nx - 2)]
+        live_v = self._vmask[np.clip(self._edge_face_row - 1, 0, ny - 2), cols]
+        self._edge_live = np.where(self._edge_on_u, live_u, live_v)
+        self._edge_celerity = np.sqrt(self.h[rows, cols] / max(gravity, 1e-12))
         self._wind: Callable[[float], tuple[float, float]] | None = None
         self._ramp_s = 0.0
         self._start = 0.0
@@ -171,9 +194,23 @@ class ShallowWater:
         lat, lon = self.grid.centres_latlon()
         return lat[self.boundary_cells], lon[self.boundary_cells]
 
-    def set_boundary(self, surface_height: Callable[[float], np.ndarray | float]) -> None:
-        """Surface height in metres at the open-sea cells as a function of time."""
+    def set_boundary(
+        self,
+        surface_height: Callable[[float], np.ndarray | float],
+        flow: Callable[[float], tuple[np.ndarray | float, np.ndarray | float]] | None = None,
+    ) -> None:
+        """The sea outside, at the open-sea cells, as functions of time.
+
+        ``surface_height`` is in metres. ``flow``, if given, is the current
+        there as (towards east, towards north) in m/s, and switches the edge
+        from clamped to Flather's condition: the surface at the edge is the
+        outside height plus ``sqrt(H / g)`` times the amount by which the
+        venue's outflow exceeds the outside current. A wave leaving the venue
+        carries exactly that much height, so it passes out instead of
+        bouncing back, and the outside current is drawn in.
+        """
         self._boundary = surface_height
+        self._boundary_flow = flow
 
     def set_wind(self, wind: Callable[[float], tuple[float, float]]) -> None:
         """Wind in m/s as (towards east, towards north) as a function of time."""
@@ -209,7 +246,13 @@ class ShallowWater:
         divergence = (flux_x[:, 1:] - flux_x[:, :-1] + flux_y[1:, :] - flux_y[:-1, :]) / dx
         eta = np.where(self.interior, eta + dt * (self._source * ramp - divergence), 0.0)
         if self._boundary is not None and self.boundary_cells.any():
-            eta[self.boundary_cells] = ramp * np.asarray(self._boundary(t_new))
+            outside = ramp * np.asarray(self._boundary(t_new))
+            if self._boundary_flow is not None:
+                flow_u, flow_v = self._boundary_flow(t_new)
+                inside = np.where(self._edge_on_u, u[self._edge_rows, self._edge_face_col], v[self._edge_face_row, self._edge_cols])
+                excess = self._edge_out * (inside - ramp * np.where(self._edge_on_u, flow_u, flow_v))
+                outside = outside + np.where(self._edge_live, self._edge_celerity * excess, 0.0)
+            eta[self.boundary_cells] = outside
 
         stress_x = stress_y = 0.0
         if self._wind is not None:

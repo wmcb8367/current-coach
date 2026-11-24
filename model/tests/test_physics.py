@@ -125,3 +125,36 @@ def test_flow_speeds_up_through_a_narrows():
     gap = np.nanmean(speed[8:13, 28:32])
     wide = np.nanmean(speed[2:19, 8:14])
     assert gap > 1.8 * wide
+
+
+def _open_channel(length=120, width=5, depth=20.0, dx=500.0):
+    """A straight channel open at both ends, walled along its sides."""
+    d = np.full((width, length), depth)
+    d[0, :] = d[-1, :] = 0.0
+    return Grid(0.0, 0.0, 0.0, 0.0, dx, d)
+
+
+def test_a_wave_leaves_through_a_flather_edge_and_bounces_off_a_clamped_one():
+    left = {}
+    for kind in ("clamped", "flather"):
+        sw = ShallowWater(_open_channel(), manning=0.0, viscosity=0.0, advection=False, coriolis=False, edge_zone_cells=0)
+        still = (lambda t: 0.0, lambda t: (0.0, 0.0))
+        sw.set_boundary(still[0], still[1] if kind == "flather" else None)
+        x = np.arange(120) * 500.0
+        sw.eta[1:-1, :] = 0.2 * np.exp(-(((x - 30_000.0) / 4_000.0) ** 2))
+        sw.eta[:, 0] = sw.eta[:, -1] = 0.0
+        # Each half of the hump reaches an end in about 36 minutes; three hours is several crossings.
+        sw.run(3 * 3600.0)
+        left[kind] = float(np.abs(sw.eta).max())
+    assert left["flather"] < 0.01
+    assert left["clamped"] > 5 * left["flather"]
+
+
+def test_a_flather_edge_brings_the_outside_current_in():
+    sw = ShallowWater(_open_channel(), manning=0.0, viscosity=0.0, advection=False, coriolis=False, edge_zone_cells=0)
+    sw.set_boundary(lambda t: 0.0, lambda t: (0.3, 0.0))
+    sw.start(0.0, ramp_s=3600.0)
+    sw.run(6 * 3600.0)
+    u, _ = sw.centre_velocity()
+    assert np.nanmean(u[2, 10:-10]) == pytest.approx(0.3, abs=0.02)
+    assert np.nanstd(u[2, 10:-10]) < 0.02

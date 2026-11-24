@@ -112,3 +112,21 @@ def cross_validate_by_day(
         # For two independent components, 86.5% of errors fall within 2 sigma.
         result["within_2_sigma"] = float(np.mean(error <= 2.0 * total))
     return result
+
+
+def score_live(live, drifts: Sequence[Drift]) -> dict[str, float]:
+    """How a live model (:class:`~currentmodel.live.LiveModel`) would have done, reading by reading.
+
+    The drifts are replayed oldest first. Each is predicted from the model
+    as it stood before that drift, then fed to it, so no drift ever informs
+    its own prediction: this is the error a user would have seen on the day.
+    The model is left tuned to all the drifts.
+    """
+    drifts = sorted(drifts, key=lambda d: d.time)
+    pred_u, pred_v = np.zeros(len(drifts)), np.zeros(len(drifts))
+    for k, drift in enumerate(drifts):
+        u, v = live.velocity(drift.lat, drift.lon, drift.time)
+        pred_u[k], pred_v[k] = float(u), float(v)
+        live.observe(drift)
+    cols = as_arrays(drifts)
+    return score(pred_u, pred_v, cols["u"], cols["v"])

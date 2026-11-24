@@ -375,6 +375,7 @@ class Stofs:
         start: float,
         end: float,
         hours_per_run: int = 6,
+        issued_before: float | None = None,
     ) -> Series:
         """Output of ``product`` at ``nodes`` from ``start`` to ``end`` (epoch seconds).
 
@@ -382,7 +383,9 @@ class Stofs:
         freshest ``hours_per_run`` hours; hours beyond the newest run come
         from its forecast. A larger ``hours_per_run`` (a multiple of 6, up to
         180) reads fewer files and leans on older forecasts, which costs
-        nothing for the tide-only product.
+        nothing for the tide-only product. With ``issued_before`` only runs
+        started at or before that time are used, so later hours are that
+        run's forecast: what was known then, for testing forecasts.
         """
         if product not in PRODUCTS:
             raise ValueError(f"product must be one of {sorted(PRODUCTS)}")
@@ -392,6 +395,8 @@ class Stofs:
         step = dt.timedelta(hours=hours_per_run)
         ceiling = _as_cycle(end) + dt.timedelta(hours=6)
         cycle = min(self.latest_cycle(), ceiling)
+        if issued_before is not None:
+            cycle = min(cycle, _as_cycle(issued_before))
         if end > cycle.timestamp() + LAST_RECORD_H * HOUR:
             raise ValueError("the end time is beyond the newest forecast")
         cycles = [cycle]
@@ -441,6 +446,7 @@ def currents(
     end: float,
     sample_s: float = 900.0,
     hours_per_run: int = 6,
+    issued_before: float | None = None,
 ) -> TidalStreamField:
     """The global model's currents around a venue, as a model the suite can use.
 
@@ -449,7 +455,7 @@ def currents(
     field is interpolated between mesh nodes, out to twice the local node
     spacing.
     """
-    series = stofs.read("currents", stofs.nodes_near(lat, lon, radius_m), start, end, hours_per_run)
+    series = stofs.read("currents", stofs.nodes_near(lat, lon, radius_m), start, end, hours_per_run, issued_before)
     u, v = series.values["u-vel"], series.values["v-vel"]
     wet = ~(np.isnan(u).any(axis=0) | np.isnan(v).any(axis=0))
     if wet.sum() < 3:

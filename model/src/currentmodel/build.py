@@ -12,10 +12,14 @@ From a position and a box size this fetches open data and returns a
     its open edges by the global model's tide. Tide only.
 
 ``venue-weather``
-    The same physics model driven by the global model's full water level,
-    which adds what wind and air pressure are doing to the sea surface. If a
-    local wind record is given its push on the water inside the venue is
-    added, and rivers likewise.
+    The same physics model driven by the global model's full water level
+    and current, which adds what wind and air pressure are doing to the sea
+    and the drift along the coast. The wind's push on the water inside the
+    venue is added from NOAA's weather model, and rivers if given.
+
+Depths come from GEBCO where it can be reached (see
+:mod:`currentmodel.depths`), otherwise from the global terrain tiles. The
+open edges take both the level and the current of the global model.
 
 Official national predictions, where a country publishes them, are loaded
 separately (see :mod:`currentmodel.baseline`) and added to the suite with
@@ -41,11 +45,13 @@ import numpy as np
 
 from . import stofs as stofs_module
 from .correction import Conditions
-from .fields import GriddedField, simulate
+from .depths import gebco_depths
+from .fields import GriddedField, edge_flow, simulate
 from .geo import KNOT_MS
-from .models import ModelSuite
+from .models import LUNAR_DAY_S, ModelSuite
 from .physics import Grid
 from .venue import build_grid
+from .wind import gfs_wind
 
 SPINUP_S = 12 * 3600.0
 MARGIN_M = 15_000.0
@@ -60,21 +66,29 @@ def build_suite(
     end: float,
     dx: float = 200.0,
     cache_dir: str | Path | None = None,
-    wind: Conditions | None = None,
+    wind: Conditions | str | None = "gfs",
     rivers: Iterable[tuple[float, float, float]] = (),
-    depth_source: Callable | None = None,
+    depth_source: Callable | str | None = "gebco",
     models: Iterable[str] = ("global", "venue-tide", "venue-weather"),
     log: Callable[[str], None] | None = None,
+    edge_currents: bool = True,
     **solver_options,
 ) -> tuple[ModelSuite, Grid]:
     """Build the models for the box centred on (lat, lon) from ``start`` to ``end`` (epoch seconds).
 
     The period can lie in the past (the archive goes back about a year) or
     run up to 7 days ahead. ``dx`` is the cell size of the venue physics
-    model; halving it costs eight times the computing. ``wind`` and
-    ``rivers`` (lat, lon, m3/s) are optional local forcing for
-    ``venue-weather``. ``depth_source`` supplies better depths than the
-    global grid, as in :func:`~currentmodel.venue.build_grid`.
+    model; halving it costs eight times the computing.
+
+    ``depth_source`` is ``"gebco"`` (the default: GEBCO's grid, falling back
+    to the terrain tiles if it cannot be reached), ``None`` for the tiles
+    alone, or a function giving better depths as in
+    :func:`~currentmodel.venue.build_grid`. ``wind`` drives ``venue-weather``
+    inside the venue: ``"gfs"`` fetches NOAA's weather model at the centre,
+    ``None`` leaves it out, or pass a record of your own. ``rivers`` are
+    (lat, lon, m3/s). With ``edge_currents`` the open edges take the global
+    model's current as well as its level, which lets waves leave the venue
+    and brings the coastal drift in.
     """
     log = log or (lambda message: None)
     models = tuple(models)
@@ -82,18 +96,34 @@ def build_suite(
     source = stofs_module.Stofs(cache / "stofs" if cache else None)
     radius = 0.5 * float(np.hypot(width_m, height_m)) + MARGIN_M
     suite = ModelSuite()
+    physics = [name for name in ("venue-tide", "venue-weather") if name in models]
 
+    if depth_source == "gebco":
+        reach_lat = 0.5 * height_m / 111_000.0 + 0.05
+        reach_lon = 0.5 * width_m / (111_000.0 * np.cos(np.radians(lat))) + 0.05
+        try:
+            log("fetching depths from GEBCO")
+            depth_source = gebco_depths(lat - reach_lat, lat + reach_lat, lon - reach_lon, lon + reach_lon, cache / "gebco" if cache else None)
+        except Exception as problem:  # no network, or the service is down: the tiles still give a grid
+            log(f"  GEBCO not available ({problem}); using the terrain tiles' depths")
+            depth_source = None
     log("building the venue grid")
     grid = build_grid(lat, lon, width_m, height_m, dx=dx, depth_source=depth_source, cache_dir=cache / "tiles" if cache else None)
 
-    if "global" in models:
+    global_currents = None
+    if "global" in models or (edge_currents and physics):
         log("reading the global model's currents")
-        suite.add(
-            "global",
-            stofs_module.currents(source, lat, lon, radius, start, end),
-            ["tide", "wind", "air pressure"],
-            "NOAA global ocean model (STOFS-2D-Global) as published",
-        )
+        global_currents = stofs_module.currents(source, lat, lon, radius, start - (SPINUP_S if edge_currents and physics else 0.0), end)
+    if "global" in models:
+        suite.add("global", global_currents, ["tide", "wind", "air pressure"], "NOAA global ocean model (STOFS-2D-Global) as published")
+    if wind == "gfs":
+        wind = None
+        if "venue-weather" in models:
+            try:
+                log("reading the wind from NOAA's weather model")
+                wind = gfs_wind(lat, lon, start - SPINUP_S, end, step_hours=1, cache_dir=cache / "gfs" if cache else None)
+            except Exception as problem:
+                log(f"  wind not available ({problem}); venue-weather runs without local wind")
     wind_function = (lambda t: wind.wind(t)) if wind is not None else None
     for name, tide_only in (("venue-tide", True), ("venue-weather", False)):
         if name not in models:
@@ -102,11 +132,16 @@ def build_suite(
         levels = stofs_module.levels(source, lat, lon, radius, start - SPINUP_S, end, tide_only=tide_only)
         log(f"running the venue physics model: {name}")
         began = _time.time()
+        flow = None
+        if edge_currents:
+            # For the tide-only model the global current is stripped to its tide, to match the tide-only level.
+            flow = edge_flow(global_currents, start - SPINUP_S, end, remove_mean_over_s=LUNAR_DAY_S if tide_only else None)
         field = simulate(
             grid,
             start,
             end,
             boundary=levels.at,
+            boundary_flow=flow,
             wind=None if tide_only else wind_function,
             rivers=() if tide_only else rivers,
             spinup_s=SPINUP_S,
@@ -118,6 +153,7 @@ def build_suite(
             description = "venue physics model, tide only"
         else:
             factors = ["tide", "weather-driven sea level", "coastline", "depths"]
+            factors += ["coastal drift"] if edge_currents else []
             factors += ["local wind"] if wind is not None else []
             factors += ["rivers"] if rivers else []
             description = "venue physics model, tide plus weather"
@@ -164,6 +200,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--hours", type=float, default=48.0)
     parser.add_argument("--out", required=True, help="folder for the results")
     parser.add_argument("--cache", default=None, help="folder to keep downloaded data in")
+    parser.add_argument("--depths", choices=("gebco", "tiles"), default="gebco", help="where water depths come from")
+    parser.add_argument("--no-wind", action="store_true", help="leave the wind out of venue-weather")
     args = parser.parse_args(argv)
 
     if args.start:
@@ -174,7 +212,17 @@ def main(argv: list[str] | None = None) -> None:
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     suite, grid = build_suite(
-        args.lat, args.lon, args.width_km * 1e3, args.height_km * 1e3, start, end, dx=args.dx, cache_dir=args.cache, log=lambda m: print(m, flush=True)
+        args.lat,
+        args.lon,
+        args.width_km * 1e3,
+        args.height_km * 1e3,
+        start,
+        end,
+        dx=args.dx,
+        cache_dir=args.cache,
+        depth_source="gebco" if args.depths == "gebco" else None,
+        wind=None if args.no_wind else "gfs",
+        log=lambda m: print(m, flush=True),
     )
     for entry in suite.entries:
         if isinstance(entry.model, GriddedField):

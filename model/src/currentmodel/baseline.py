@@ -9,6 +9,9 @@ any position and time so it can be compared with drifts and corrected.
 from __future__ import annotations
 
 import csv
+import datetime as dt
+import io
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -154,6 +157,64 @@ class TidalStreamField:
             raise ValueError("every point must have a value at every time")
         latlon = np.array(list(points))
         return cls(latlon[:, 0], latlon[:, 1], np.sort(list(times)), u, v, **kwargs)
+
+
+HK_TIDAL_STREAM_URL = "https://current.hydro.gov.hk/data/all_points_static/All_Points_{first}_{last}_{mode}.zip"
+
+
+def hk_tidal_stream_url(year: int, month: int, surface: bool = True) -> str:
+    """Where the Hong Kong Hydrographic Office keeps one month of predictions for all points.
+
+    ``surface`` picks the surface layer flow; otherwise the depth average.
+    Months from about a year back to a year ahead are published.
+    """
+    first = dt.date(year, month, 1)
+    last = (first.replace(day=28) + dt.timedelta(days=4)).replace(day=1) - dt.timedelta(days=1)
+    return HK_TIDAL_STREAM_URL.format(first=first, last=last, mode="Surface" if surface else "Average")
+
+
+def load_hk_tidal_streams(*paths: str | Path, **kwargs) -> TidalStreamField:
+    """Load Hong Kong Hydrographic Office tidal stream predictions.
+
+    Each path is a monthly "all points" download (the ``.zip`` as served, or
+    the ``.csv`` inside it); give several consecutive months to cover a
+    longer period. Rows are one point and one day, with a speed in knots and
+    the direction the stream sets towards for every quarter hour, in Hong
+    Kong time. Tide only: no wind, rain or river flow.
+
+    Source: Hydrographic Office, Marine Department, HKSAR Government.
+    """
+    hong_kong = dt.timezone(dt.timedelta(hours=8))
+    by_point: dict[tuple[float, float], dict[float, tuple[np.ndarray, np.ndarray]]] = {}
+    for path in paths:
+        path = Path(path)
+        if path.suffix.lower() == ".zip":
+            archive = zipfile.ZipFile(path)
+            handle = io.TextIOWrapper(archive.open(archive.namelist()[0]), encoding="utf-8-sig", newline="")
+        else:
+            handle = open(path, newline="", encoding="utf-8-sig")
+        with handle:
+            reader = csv.reader(handle)
+            header = next(reader)
+            slots = [i for i, name in enumerate(header) if name.endswith("-KNOT")]
+            minutes = np.array([int(header[i][:2]) * 60 + int(header[i][2:4]) for i in slots])
+            for row in reader:
+                day = dt.datetime.strptime(row[3], "%Y-%m-%d").replace(tzinfo=hong_kong).timestamp()
+                speed = np.array([float(row[i] or "nan") for i in slots]) * KNOT_MS
+                toward = np.array([float(row[i + 1] or "nan") for i in slots])
+                key = (float(row[0]), float(row[1]))
+                by_point.setdefault(key, {})[day] = uv_from_speed_dir(speed, toward) + (minutes,)
+    if not by_point:
+        raise ValueError("no predictions in the files given")
+    days = sorted(set.intersection(*(set(v) for v in by_point.values())))
+    whole = [k for k, v in by_point.items() if all(d in v for d in days)]
+    step = minutes * 60.0
+    times = np.concatenate([d + step for d in days])
+    u = np.column_stack([np.concatenate([by_point[k][d][0] for d in days]) for k in whole])
+    v = np.column_stack([np.concatenate([by_point[k][d][1] for d in days]) for k in whole])
+    ok = ~(np.isnan(u).any(axis=0) | np.isnan(v).any(axis=0))
+    latlon = np.array(whole)[ok]
+    return TidalStreamField(latlon[:, 0], latlon[:, 1], times, u[:, ok], v[:, ok], **kwargs)
 
 
 def _is_number(text: str) -> bool:

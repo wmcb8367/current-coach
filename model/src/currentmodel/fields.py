@@ -17,7 +17,9 @@ from pathlib import Path
 from typing import Callable, Iterable, Sequence
 
 import numpy as np
+from scipy.spatial import cKDTree
 
+from .geo import to_xy
 from .physics import Grid, ShallowWater
 
 # Tidal constituent speeds in degrees per hour, most important first.
@@ -133,6 +135,7 @@ def simulate(
     sample_s: float = 900.0,
     spinup_s: float = 12 * 3600.0,
     progress: Callable[[float], None] | None = None,
+    boundary_flow: Callable[[np.ndarray, np.ndarray], Callable[[float], tuple[np.ndarray, np.ndarray]]] | None = None,
     **solver_options,
 ) -> GriddedField:
     """Run the physics model from ``start`` to ``end`` and keep the currents.
@@ -141,7 +144,10 @@ def simulate(
     positions of the open cells it returns a function of time, which is what
     :meth:`currentmodel.stofs.LevelField.at` does. ``wind`` is a function of
     time returning the wind in m/s as (towards east, towards north).
-    ``rivers`` are (lat, lon, discharge in m3/s).
+    ``rivers`` are (lat, lon, discharge in m3/s). ``boundary_flow`` supplies
+    the current of the sea outside in the same way as ``boundary`` supplies
+    its level (see :func:`edge_flow`); with it the open edges let waves out
+    and bring the outside current in.
 
     The run starts ``spinup_s`` earlier from still water so that start-up
     waves have died away by ``start``; the boundary data must reach back that
@@ -149,7 +155,8 @@ def simulate(
     """
     solver = ShallowWater(grid, **solver_options)
     if boundary is not None:
-        solver.set_boundary(boundary(*solver.boundary_latlon()))
+        flow = boundary_flow(*solver.boundary_latlon()) if boundary_flow is not None else None
+        solver.set_boundary(boundary(*solver.boundary_latlon()), flow)
     if wind is not None:
         solver.set_wind(wind)
     for lat, lon, discharge in rivers:
@@ -170,6 +177,53 @@ def simulate(
         if progress is not None:
             progress(k / max(steps, 1))
     return GriddedField(grid, np.array(times), np.array(us), np.array(vs))
+
+
+def edge_flow(
+    model,
+    start: float,
+    end: float,
+    sample_s: float = 900.0,
+    remove_mean_over_s: float | None = None,
+) -> Callable[[np.ndarray, np.ndarray], Callable[[float], tuple[np.ndarray, np.ndarray]]]:
+    """A wider model's current along a venue's open edges, for :func:`simulate`.
+
+    ``model`` is any current model that covers the venue's edges from
+    ``start`` to ``end``, normally the global one. Edge cells it does not
+    reach take the value of the nearest cell it does. With
+    ``remove_mean_over_s`` (a lunar day, say) the running mean over that span
+    is taken out, which leaves the tide alone: the right companion for a
+    tide-only water level.
+    """
+    times = np.arange(start, end + sample_s, sample_s)
+
+    def at(lat, lon):
+        lat, lon = np.atleast_1d(lat).astype(float), np.atleast_1d(lon).astype(float)
+        grid_t, grid_k = np.meshgrid(times, np.arange(lat.size), indexing="ij")
+        u, v = model.velocity(lat[grid_k], lon[grid_k], grid_t)
+        good = ~(np.isnan(u).any(axis=0) | np.isnan(v).any(axis=0))
+        if not good.any():
+            raise ValueError("the wider model reaches none of the venue's open edges")
+        x, y = to_xy(lat, lon, float(lat.mean()), float(lon.mean()))
+        nearest = cKDTree(np.column_stack([x[good], y[good]])).query(np.column_stack([x, y]))[1]
+        u, v = u[:, good][:, nearest], v[:, good][:, nearest]
+        if remove_mean_over_s:
+            half = max(1, int(round(0.5 * remove_mean_over_s / sample_s)))
+            for field in (u, v):
+                total = np.concatenate([np.zeros((1, field.shape[1])), np.cumsum(field, axis=0)])
+                lo = np.clip(np.arange(times.size) - half, 0, times.size)
+                hi = np.clip(np.arange(times.size) + half + 1, 0, times.size)
+                field -= (total[hi] - total[lo]) / (hi - lo)[:, None]
+
+        def flow(t: float):
+            k = min(max((t - times[0]) / sample_s, 0.0), times.size - 1.000001)
+            i = int(k)
+            w = k - i
+            return (1 - w) * u[i] + w * u[i + 1], (1 - w) * v[i] + w * v[i + 1]
+
+        return flow
+
+    return at
 
 
 # ---------------------------------------------------------------- harmonics

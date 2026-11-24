@@ -116,18 +116,26 @@ class WindDrift:
     drifts set its weight. The wind is one series for the whole venue
     (:class:`~currentmodel.correction.Conditions`, for instance from
     :func:`~currentmodel.wind.gfs_wind`); outside its span the answer is NaN.
+
+    The water takes hours to answer the wind. ``average_s`` uses the mean
+    wind over that long before each time instead of the wind at that moment;
+    six hours did a little better than none against the first readings.
     """
 
-    def __init__(self, conditions: Conditions, lat0: float, lon0: float, fraction: float = 0.02):
-        self.conditions, self.fraction = conditions, float(fraction)
+    def __init__(self, conditions: Conditions, lat0: float, lon0: float, fraction: float = 0.02, average_s: float = 0.0):
+        self.conditions, self.fraction, self.average_s = conditions, float(fraction), float(average_s)
         self.lat0, self.lon0 = float(lat0), float(lon0)
 
     def velocity(self, lat, lon, time):
         lat, lon, time = np.broadcast_arrays(
             np.asarray(lat, dtype=float), np.asarray(lon, dtype=float), np.asarray(time, dtype=float)
         )
-        wind_u, wind_v = self.conditions.wind(time)
-        inside = (time >= self.conditions.times[0]) & (time <= self.conditions.times[-1])
+        if self.average_s > 0:
+            back = np.linspace(-self.average_s, 0.0, max(2, int(self.average_s // 900) + 1))
+            wind_u, wind_v = (part.mean(axis=-1) for part in self.conditions.wind(time[..., None] + back))
+        else:
+            wind_u, wind_v = self.conditions.wind(time)
+        inside = (time - self.average_s >= self.conditions.times[0]) & (time <= self.conditions.times[-1])
         return np.where(inside, self.fraction * wind_u, np.nan), np.where(inside, self.fraction * wind_v, np.nan)
 
     def rate(self, lat, lon, time, half_window_s: float = 1800.0):

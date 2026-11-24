@@ -143,3 +143,18 @@ def test_a_blend_finds_how_much_of_the_wind_the_surface_follows():
     # The steady flow is taken whole and the wind model, written for 2%, is scaled to 3%.
     assert blend.weights == pytest.approx([1.0, 1.5], abs=1e-6)
     assert np.isnan(wind.velocity(22.3, 114.3, times[-1] + 10.0)[0])
+
+
+def test_wind_drift_can_use_the_mean_wind_of_the_last_hours():
+    from currentmodel.correction import Conditions
+    from currentmodel.models import WindDrift
+
+    hours = np.arange(0.0, 25.0) * 3600.0
+    rising = Conditions(hours, hours / 3600.0, np.zeros(hours.size))  # the wind gains 1 m/s every hour
+    now = WindDrift(rising, 22.0, 114.0, fraction=0.02)
+    slow = WindDrift(rising, 22.0, 114.0, fraction=0.02, average_s=6 * 3600.0)
+    u_now, _ = now.velocity(22.0, 114.0, 12 * 3600.0)
+    u_slow, _ = slow.velocity(np.array([22.0, 22.0]), 114.0, np.array([12 * 3600.0, 3 * 3600.0]))
+    assert float(u_now) == pytest.approx(0.02 * 12.0)
+    assert u_slow[0] == pytest.approx(0.02 * 9.0)  # the mean of hours 6 to 12
+    assert np.isnan(u_slow[1])  # six hours back is before the record starts
