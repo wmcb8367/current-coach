@@ -61,6 +61,51 @@ class FunctionModel:
         return (u1 - u0) / (2 * half_window_s), (v1 - v0) / (2 * half_window_s)
 
 
+LUNAR_DAY_S = 89_428.0  # 24 h 50 min: the tide repeats, near enough, after this long
+
+
+class Subtidal:
+    """What is left of a model once the tide is averaged out.
+
+    The mean of the model over one lunar day centred on the time asked for:
+    the back-and-forth of the tide cancels and the steady drift remains,
+    such as a coastal current the season's wind keeps running or the flow a
+    river sets up. A model that follows the weather has this part; a
+    tide-only model has almost none. Taking it from a coarse model that
+    includes the weather and adding it to a fine tide model (a
+    :class:`Blend` of the two) gives each the job it is good at.
+
+    Needs the model to cover half a lunar day either side of the time asked
+    for; where less than nine tenths of that is covered the answer is NaN.
+    """
+
+    def __init__(self, model: CurrentModel, window_s: float = LUNAR_DAY_S, samples: int = 50):
+        self.model, self.window_s, self.samples = model, float(window_s), int(samples)
+        self.lat0, self.lon0 = model.lat0, model.lon0
+        self._offsets = ((np.arange(self.samples) + 0.5) / self.samples - 0.5) * self.window_s
+
+    def velocity(self, lat, lon, time):
+        lat, lon, time = np.broadcast_arrays(
+            np.asarray(lat, dtype=float), np.asarray(lon, dtype=float), np.asarray(time, dtype=float)
+        )
+        total_u, total_v, count = np.zeros(lat.shape), np.zeros(lat.shape), np.zeros(lat.shape)
+        for offset in self._offsets:
+            u, v = self.model.velocity(lat, lon, time + offset)
+            ok = ~(np.isnan(u) | np.isnan(v))
+            total_u += np.where(ok, u, 0.0)
+            total_v += np.where(ok, v, 0.0)
+            count += ok
+        enough = count >= 0.9 * self.samples
+        with np.errstate(invalid="ignore", divide="ignore"):
+            return np.where(enough, total_u / count, np.nan), np.where(enough, total_v / count, np.nan)
+
+    def rate(self, lat, lon, time, half_window_s: float = 1800.0):
+        time = np.asarray(time, dtype=float)
+        u0, v0 = self.velocity(lat, lon, time - half_window_s)
+        u1, v1 = self.velocity(lat, lon, time + half_window_s)
+        return (u1 - u0) / (2 * half_window_s), (v1 - v0) / (2 * half_window_s)
+
+
 class Blend:
     """A weighted sum of models. It has an answer only where every member has one."""
 

@@ -19,6 +19,7 @@ can be compared, swapped and blended (`models.py`).
 | `venue-tide` | tide, coastline, depths | everywhere | our physics model (`physics.py`) on the venue's coast and depths (`venue.py`), driven at its open edges by the global model's tide |
 | `venue-weather` | tide, weather-driven sea level, coastline, depths, optionally local wind and rivers | everywhere; experimental | the same physics model, with the global model's weather-driven rise and tilt of the sea added at the open edges |
 | official | tide | where a national service publishes tidal streams, such as Hong Kong | loaded from the service's files (`baseline.py`) |
+| steady drift of a model | whatever keeps the water moving once the tide is averaged out: the season's coastal current, wind over days, rivers | wherever the parent model covers | `Subtidal` in `models.py`; add it to a tide model with `Blend` |
 | any of the above, corrected | adds what the drifts show | wherever there are drifts | `correction.py` |
 | `blend` | everything its members include | wherever two or more models overlap | weighted mix fitted to drifts (`models.py`) |
 
@@ -82,15 +83,49 @@ field on a grid as JSON for the app.
 ## What is real and what is simulated
 
 Real: the global model's currents and water levels, the coastline and
-depths, and the physics runs driven by them. These have been built for Hong
-Kong and for Biscayne Bay.
+depths, the physics runs driven by them, and the wind from NOAA's weather
+model (`wind.py`). These have been built for Hong Kong and for Biscayne Bay.
 
-Not yet real: any comparison with measured current. No drifts and no
-official tidal streams are connected, so nothing here says how accurate any
-model is at a real venue. The correction, the scoring and the blend are
-tested on a simulated venue (`synthetic.py`) whose answer is known.
+Still simulated: the tests of the correction, the scoring and the blend,
+which use a venue (`synthetic.py`) whose answer is known. No official tidal
+streams are connected.
 
-What the runs do show (48 hours from 22 November 2026, 200 m cells):
+### First comparison with measured current
+
+42 coach-boat readings on six days, 15 to 23 November 2026, in the race
+area east of Clearwater Bay, Hong Kong (two more were set aside: one at 12
+knots and one 14 seconds long). Mean measured speed 0.33 knots. Vector
+error of each model, as built and with the correction fitted on the other
+days:
+
+| Model | As built | Corrected, held-out days |
+| --- | --- | --- |
+| `venue-tide` | 0.42 kn | 0.40 kn |
+| no current at all | 0.39 kn | 0.38 kn |
+| `venue-weather` | 0.33 kn | 0.37 kn |
+| `global` | 0.32 kn | 0.29 kn |
+| steady drift of `global` | 0.32 kn | 0.28 kn |
+
+- The current there on those days was mostly not tide. Within each day it
+  held one direction for the hours sampled, south-west on the three
+  windiest days. The best simple description is the global model's steady
+  drift (the winter monsoon's coastal current) plus 2% of the wind speed,
+  downwind.
+- The tide-only physics model is worse than assuming no current. Its tide
+  swings north and south there and explains none of what was measured.
+  Whether its tide is wrong or only small beside the drift, these readings
+  cannot say: most were taken near neaps, and the spring-tide day near
+  slack water.
+- Every model is too weak, by 0.15 to 0.2 knots. Directions are within 20
+  to 30 degrees for readings above 0.3 knots.
+- Even the best fit leaves 0.25 knots unexplained. On 23 November the
+  current was 0.7 knots in open water and 0.1 to 0.3 knots close under the
+  land a few kilometres away, which no model here resolves.
+- The screen for bad readings picked out the 12 knot reading by itself.
+
+Six days in one season is a small sample. Nothing above is settled.
+
+What the first runs showed before any readings (48 hours from 22 November 2026, 200 m cells):
 
 - In open water the tide-only venue model agrees with the global model that
   drives it: correlation 0.80 in Hong Kong and 0.85 in Biscayne Bay, with a
@@ -110,10 +145,15 @@ What the runs do show (48 hours from 22 November 2026, 200 m cells):
 
 Still to build:
 
-- An export of synced drifts from the backend, to score the models.
+- An export of synced drifts from the backend (script written, in the
+  backend repository; readings so far came as spreadsheets, read by
+  `load_readings_csv`).
+- Open edges of the physics model that carry the global model's drift, so
+  the venue model has the coastal current as well as the tide.
 - An importer for the Hong Kong Hydrographic Office tidal streams, and
   importers for Hong Kong Observatory wind, rain and observed tide.
-- A source of gridded wind (for the local wind term) and of river flow.
+- Wind varying across the venue (`wind.py` gives one series per venue) and
+  a source of river flow.
 - Better Hong Kong depths.
 - Open edges that also use the global model's currents, and drying flats.
 
@@ -127,7 +167,8 @@ python -m currentmodel.demo
 pytest
 ```
 
-The tests need no network. `build.py` needs access to `*.amazonaws.com`.
+The tests need no network. `build.py` and `wind.py` need access to
+`*.amazonaws.com`.
 
 ## Conventions
 
@@ -141,6 +182,7 @@ The tests need no network. `build.py` needs access to `*.amazonaws.com`.
 ## Attribution
 
 - Global currents and water levels: NOAA/NOS STOFS-2D-Global, public domain.
+- Wind: NOAA/NCEP Global Forecast System, public domain.
 - Coastline and depths: Terrain Tiles on AWS Open Data, compiled by Mapzen
   from sources listed at
   https://github.com/tilezen/joerd/blob/master/docs/attribution.md

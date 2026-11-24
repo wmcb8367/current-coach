@@ -9,15 +9,16 @@ an error estimate.
 
 from __future__ import annotations
 
+import csv
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable, Sequence
 
 import numpy as np
 
-from .geo import EARTH_RADIUS_M, uv_from_speed_dir
+from .geo import EARTH_RADIUS_M, KNOT_MS, uv_from_speed_dir
 
 DEFAULT_GPS_SIGMA_M = 5.0
 MIN_SIGMA_MS = 0.02
@@ -129,6 +130,117 @@ def load_drifts(path: str | Path, default_user: str = "unknown") -> list[Drift]:
 def drifts_from_records(records: Iterable[dict], default_user: str = "unknown") -> list[Drift]:
     drifts = (drift_from_app_record(r, default_user) for r in records)
     return [d for d in drifts if d is not None]
+
+
+# Column names seen in spreadsheets of readings, by what they hold.
+_CSV_COLUMNS = {
+    "time": ("time_utc", "timestamp", "time", "time_hong_kong", "time_hkt", "time_local"),
+    "speed_kn": ("speed_knots", "current_kt", "current_kn", "current_knots", "speed_kt", "speed_kn"),
+    "from_deg": ("flow_from_degrees", "current_from_deg", "from_direction_degrees", "from_deg"),
+    "to_deg": ("set_toward_degrees", "set_deg", "current_to_deg", "to_deg"),
+    "lat": ("latitude", "lat"),
+    "lon": ("longitude", "lon", "lng"),
+    "duration": ("duration_seconds", "duration_s"),
+    "valid": ("is_valid", "valid"),
+    "confidence": ("confidence_percent", "confidence"),
+    "wind_from": ("wind_from_deg", "wind_from_degrees", "twd"),
+    "wind_kn": ("wind_kt", "wind_kn", "wind_knots", "tws"),
+}
+_ZONES = {"UTC": 0.0, "GMT": 0.0, "Z": 0.0, "HKT": 8.0, "PST": -8.0, "PDT": -7.0, "EST": -5.0, "EDT": -4.0}
+
+
+def _csv_time(text: str, date: str | None, utc_offset_hours: float | None) -> float:
+    """Epoch seconds of a time written as ISO, as ``2026-11-15 12:18:00 HKT``, or as ``12:18`` on ``date``."""
+    text = text.strip()
+    parts = text.rsplit(" ", 1)
+    if len(parts) == 2 and parts[1].upper() in _ZONES:
+        text, utc_offset_hours = parts[0], _ZONES[parts[1].upper()]
+    if "-" not in text and "/" not in text:
+        if date is None:
+            raise ValueError(f"the time {text!r} has no date: pass date='YYYY-MM-DD'")
+        text = f"{date} {text}"
+    stamp = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    if stamp.tzinfo is None:
+        if utc_offset_hours is None:
+            raise ValueError(f"the time {text!r} has no time zone: pass utc_offset_hours")
+        stamp = stamp.replace(tzinfo=timezone(timedelta(hours=utc_offset_hours)))
+    return stamp.timestamp()
+
+
+def load_readings_csv(
+    path: str | Path,
+    user: str = "unknown",
+    date: str | None = None,
+    utc_offset_hours: float | None = None,
+    default_duration_s: float = 180.0,
+) -> list[Drift]:
+    """Load current readings from a spreadsheet saved as CSV.
+
+    For readings kept outside the app, or exported from it as a table. The
+    columns are found by name: a time, a speed in knots, the direction the
+    current comes *from* or sets *towards*, latitude and longitude, and
+    optionally duration, validity, confidence and the wind noted at the time
+    (from direction and knots). Rows without a position or a current are
+    skipped, as are rows marked invalid.
+
+    ``date`` (``YYYY-MM-DD``) and ``utc_offset_hours`` are needed when the
+    file gives only a time of day. With a duration column the position is
+    taken as the start fix, as in the app, and the reading moved to the
+    middle of the drift. Without one the position is used as it stands and
+    ``default_duration_s`` sets the error estimate.
+    """
+    with open(path, newline="", encoding="utf-8-sig") as handle:
+        rows = list(csv.DictReader(handle))
+    if not rows:
+        return []
+    header = {name.strip().lower(): name for name in rows[0]}
+    column = {key: next((header[n] for n in names if n in header), None) for key, names in _CSV_COLUMNS.items()}
+    for needed in ("time", "speed_kn", "lat", "lon"):
+        if column[needed] is None:
+            raise ValueError(f"no {needed} column in {path}; expected one of {_CSV_COLUMNS[needed]}")
+    if column["from_deg"] is None and column["to_deg"] is None:
+        raise ValueError(f"no current direction column in {path}")
+
+    def cell(row, key):
+        text = (row.get(column[key]) or "").strip() if column[key] else ""
+        return text or None
+
+    drifts = []
+    stem = Path(path).stem
+    for number, row in enumerate(rows, start=2):
+        speed, lat, lon = cell(row, "speed_kn"), cell(row, "lat"), cell(row, "lon")
+        direction = cell(row, "from_deg") or cell(row, "to_deg")
+        if None in (speed, lat, lon, direction) or (cell(row, "valid") or "true").lower() in ("false", "0", "no"):
+            continue
+        dir_to = (float(direction) + 180.0) % 360.0 if cell(row, "from_deg") else float(direction) % 360.0
+        u, v = uv_from_speed_dir(float(speed) * KNOT_MS, dir_to)
+        duration = float(cell(row, "duration") or 0.0)
+        half = 0.5 * duration
+        lat0, lon0 = float(lat), float(lon)
+        wind_u = wind_v = None
+        if cell(row, "wind_from") and cell(row, "wind_kn"):
+            wu, wv = uv_from_speed_dir(float(cell(row, "wind_kn")) * KNOT_MS, (float(cell(row, "wind_from")) + 180.0) % 360.0)
+            wind_u, wind_v = float(wu), float(wv)
+        extra = {"row": number}
+        if cell(row, "confidence"):
+            extra["confidence"] = float(cell(row, "confidence"))
+        drifts.append(
+            Drift(
+                id=f"{stem}:{number}",
+                user_id=user,
+                time=_csv_time(cell(row, "time"), date, utc_offset_hours) + half,
+                lat=float(lat0 + np.degrees(float(v) * half / EARTH_RADIUS_M)),
+                lon=float(lon0 + np.degrees(float(u) * half / (EARTH_RADIUS_M * np.cos(np.radians(lat0))))),
+                u=float(u),
+                v=float(v),
+                sigma=drift_sigma(duration or default_duration_s),
+                duration_s=duration or default_duration_s,
+                wind_u=wind_u,
+                wind_v=wind_v,
+                extra=extra,
+            )
+        )
+    return drifts
 
 
 def as_arrays(drifts: Sequence[Drift]) -> dict[str, np.ndarray]:

@@ -12,7 +12,7 @@ dependencies = ["numpy>=1.26", "scipy>=1.11"]
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 # Needed only to fetch open data: map tiles are PNG, older NOAA runs are netCDF-4.
-data = ["pillow>=10", "h5py>=3.10"]
+data = ["pillow>=10", "h5py>=3.10", "eccodes>=2.37"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

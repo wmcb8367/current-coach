@@ -105,3 +105,20 @@ def test_blend_can_rescale_a_model_that_runs_weak():
     drifts = drifts_from_records(synthetic.make_app_records(world, sessions=6))
     weak = FunctionModel(lambda la, lo, t: tuple(0.5 * c for c in world.truth(la, lo, t)), synthetic.LAT0, synthetic.LON0)
     assert Blend.fit([weak], drifts).weights[0] == pytest.approx(2.0, abs=0.1)
+
+
+def test_subtidal_keeps_the_steady_drift_and_drops_the_tide():
+    from currentmodel.models import LUNAR_DAY_S, Subtidal
+
+    def tide_and_drift(lat, lon, time):
+        time = np.asarray(time, dtype=float)
+        covered = (time >= 0.0) & (time <= 5 * 86_400.0)
+        swing = 0.5 * np.sin(2 * np.pi * time / (LUNAR_DAY_S / 2))
+        return np.where(covered, 0.1 + swing, np.nan), np.where(covered, -0.05 + 0.3 * swing, np.nan)
+
+    steady = Subtidal(FunctionModel(tide_and_drift, 22.3, 114.3))
+    u, v = steady.velocity(22.3, 114.3, np.array([2.0, 2.5, 3.0]) * 86_400.0)
+    assert np.allclose(u, 0.1, atol=1e-3) and np.allclose(v, -0.05, atol=1e-3)
+    # Too close to the end of the record for a whole lunar day: no answer.
+    u, _ = steady.velocity(22.3, 114.3, 4.9 * 86_400.0)
+    assert np.isnan(u)
