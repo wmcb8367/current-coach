@@ -43,6 +43,7 @@ before the day began.
 | `CurrentModels/CurrentField.swift` | reading a day's file; the current at a place and time |
 | `CurrentModels/CurrentColorScale.swift` | speed to colour; the speed map as a picture |
 | `CurrentModels/CurrentParticles.swift` | the drifting streaks |
+| `CurrentModels/CurrentMapRegion.swift` | what the map shows; the zoom buttons' arithmetic |
 | `CurrentModels/CurrentValidation.swift` | the scores the server returns |
 | `Services/CurrentModelStore.swift` | downloads, the on-disk cache, the choices |
 | `Views/CurrentModelMapView.swift` | the screen |
@@ -51,6 +52,8 @@ before the day began.
 
 Everything under `CurrentModels/` uses Foundation only and is covered by
 `CurrentCoachTests/CurrentModelTests.swift`.
+
+The map zooms by pinch, and by the plus and minus buttons at its lower right, which halve or double the view; the third button brings the whole venue back.
 
 The map is kept north-up and flat (pan and zoom only) so that the picture
 and the streaks can be placed from two corners of the view.

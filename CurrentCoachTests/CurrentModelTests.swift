@@ -316,6 +316,44 @@ struct CurrentMapDrawingTests {
         system.reset()
         #expect(system.particles.allSatisfy { $0.trail.isEmpty })
     }
+
+    @Test("The zoom buttons halve and double the view and stop at their limits")
+    func zoomButtons() throws {
+        let grid = CurrentMapGrid(south: 22.1, north: 22.5, west: 114.1, east: 114.6, rows: 101, cols: 126)
+        let whole = CurrentMapRegion(fitting: grid)
+        #expect(abs(whole.centerLatitude - 22.3) < 1e-9 && abs(whole.centerLongitude - 114.35) < 1e-9)
+        #expect(abs(whole.latitudeSpan - 0.4) < 1e-9 && abs(whole.longitudeSpan - 0.5) < 1e-9)
+        #expect(whole.canZoomIn(grid) && whole.canZoomOut(grid))
+
+        // One press in: half as much in view, the same centre, the same shape.
+        let closer = whole.zoomed(closer: true, grid: grid)
+        #expect(abs(closer.latitudeSpan - 0.2) < 1e-9 && abs(closer.longitudeSpan - 0.25) < 1e-9)
+        #expect(closer.centerLatitude == whole.centerLatitude && closer.centerLongitude == whole.centerLongitude)
+        // In and out again is where it started.
+        let back = closer.zoomed(closer: false, grid: grid)
+        #expect(abs(back.latitudeSpan - whole.latitudeSpan) < 1e-9 && abs(back.longitudeSpan - whole.longitudeSpan) < 1e-9)
+
+        // Pressing in stops at two cells of the grid (0.004 degrees each here), and the button says so.
+        var view = whole
+        for _ in 0..<20 { view = view.zoomed(closer: true, grid: grid) }
+        #expect(abs(view.latitudeSpan - 0.008) < 1e-9)
+        #expect(abs(view.longitudeSpan / view.latitudeSpan - 1.25) < 1e-6)
+        #expect(!view.canZoomIn(grid) && view.canZoomOut(grid))
+
+        // Pressing out stops at eight times the venue.
+        for _ in 0..<20 { view = view.zoomed(closer: false, grid: grid) }
+        #expect(abs(view.latitudeSpan - 3.2) < 1e-9)
+        #expect(view.canZoomIn(grid) && !view.canZoomOut(grid))
+
+        // A view pinched in past the limit is left alone by "in", and "out" still works from it.
+        let pinched = CurrentMapRegion(centerLatitude: 22.3, centerLongitude: 114.3, latitudeSpan: 0.001, longitudeSpan: 0.002)
+        #expect(pinched.zoomed(closer: true, grid: grid) == pinched)
+        #expect(abs(pinched.zoomed(closer: false, grid: grid).latitudeSpan - 0.002) < 1e-12)
+
+        // A view the map has not reported properly falls back to the whole venue.
+        let broken = CurrentMapRegion(centerLatitude: 0, centerLongitude: 0, latitudeSpan: 0, longitudeSpan: .nan)
+        #expect(broken.zoomed(closer: true, grid: grid) == whole)
+    }
 }
 
 @Suite("Current model validation")

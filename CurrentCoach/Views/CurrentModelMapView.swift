@@ -21,6 +21,8 @@ struct CurrentModelMapView: View {
     @State private var image: CGImage?
     @State private var engine = CurrentParticleEngine()
     @State private var framedVenue: String?
+    /// What the map shows now, kept up to date as it is panned and zoomed.
+    @State private var shown: CurrentMapRegion?
 
     private struct ProbePoint: Equatable {
         let latitude: Double
@@ -139,7 +141,8 @@ struct CurrentModelMapView: View {
                     }
                 }
                 .mapStyle(.standard(elevation: .flat, emphasis: .muted))
-                .onMapCameraChange(frequency: .continuous) { _ in
+                .onMapCameraChange(frequency: .continuous) { context in
+                    shown = CurrentMapRegion(context.region)
                     locateBox(proxy, size: geometry.size)
                 }
                 .onChange(of: geometry.size, initial: true) { _, size in
@@ -166,6 +169,9 @@ struct CurrentModelMapView: View {
                 .overlay(alignment: .top) { topBar }
                 .overlay(alignment: .bottomLeading) {
                     CurrentLegendView().padding(10)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    zoomControls.padding(10)
                 }
             }
         }
@@ -202,11 +208,64 @@ struct CurrentModelMapView: View {
         framedVenue = venue.id
         engine.reset()
         probe = nil
-        camera = .region(MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: venue.centerLatitude, longitude: venue.centerLongitude),
-            span: MKCoordinateSpan(latitudeDelta: venue.north - venue.south, longitudeDelta: venue.east - venue.west)
-        ))
+        camera = .region(CurrentMapRegion(fitting: venue.grid).coordinateRegion)
         clampTime()
+    }
+
+    // MARK: - Zoom
+
+    /// Buttons to zoom with one finger: on a moving boat a pinch needs two
+    /// hands. The third brings the whole venue back into view.
+    private var zoomControls: some View {
+        let grid = models.venue?.grid
+        let region = shown ?? grid.map { CurrentMapRegion(fitting: $0) }
+        return VStack(spacing: 0) {
+            zoomButton("plus", label: "Zoom in", enabled: grid.map { region?.canZoomIn($0) ?? false } ?? false) {
+                zoom(closer: true)
+            }
+            Divider().overlay(NT.borderStrong)
+            zoomButton("minus", label: "Zoom out", enabled: grid.map { region?.canZoomOut($0) ?? false } ?? false) {
+                zoom(closer: false)
+            }
+            Divider().overlay(NT.borderStrong)
+            zoomButton("viewfinder", label: "Show the whole venue", enabled: grid != nil) {
+                guard let grid else { return }
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    camera = .region(CurrentMapRegion(fitting: grid).coordinateRegion)
+                }
+            }
+        }
+        .frame(width: 46)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(NT.bgPrimary.opacity(0.88))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(NT.borderStrong, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func zoomButton(_ symbol: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(enabled ? NT.textPrimary : NT.textDim.opacity(0.5))
+                .frame(width: 46, height: 46)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+    }
+
+    private func zoom(closer: Bool) {
+        guard let grid = models.venue?.grid else { return }
+        let from = shown ?? CurrentMapRegion(fitting: grid)
+        withAnimation(.easeInOut(duration: 0.25)) {
+            camera = .region(from.zoomed(closer: closer, grid: grid).coordinateRegion)
+        }
     }
 
     /// The sailor's own readings taken within an hour and a half of the time shown.
@@ -531,6 +590,24 @@ struct CurrentModelMapView: View {
             if let span, next > span.upperBound { next = max(start, span.lowerBound) }
             time = next
         }
+    }
+}
+
+private extension CurrentMapRegion {
+    init(_ region: MKCoordinateRegion) {
+        self.init(
+            centerLatitude: region.center.latitude,
+            centerLongitude: region.center.longitude,
+            latitudeSpan: region.span.latitudeDelta,
+            longitudeSpan: region.span.longitudeDelta
+        )
+    }
+
+    var coordinateRegion: MKCoordinateRegion {
+        MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: centerLatitude, longitude: centerLongitude),
+            span: MKCoordinateSpan(latitudeDelta: latitudeSpan, longitudeDelta: longitudeSpan)
+        )
     }
 }
 
