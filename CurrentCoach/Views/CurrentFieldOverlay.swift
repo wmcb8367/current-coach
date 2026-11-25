@@ -139,19 +139,38 @@ struct CurrentFieldOverlay: View {
 }
 
 /// The colour key: slack water on the left, a strong stream on the right.
+/// The steps of the scale are spaced evenly, so the weak end, where most
+/// sailing happens, gets as much room as the strong end.
 struct CurrentLegendView: View {
     var scale: CurrentColorScale = .standard
-    private let marks: [Double] = [0, 0.5, 1, 2, 3]
+    private let marks: [Double] = [0, 0.3, 0.5, 1, 2, 4]
+
+    /// Where a speed sits along the key, 0 to 1.
+    private func position(_ knots: Double) -> CGFloat {
+        let stops = scale.stops
+        guard stops.count > 1 else { return 0 }
+        guard let upper = stops.firstIndex(where: { $0.knots >= knots }) else { return 1 }
+        if upper == 0 { return 0 }
+        let a = stops[upper - 1]
+        let b = stops[upper]
+        let share = (knots - a.knots) / (b.knots - a.knots)
+        return CGFloat((Double(upper - 1) + share) / Double(stops.count - 1))
+    }
 
     private var gradient: LinearGradient {
-        let top = scale.maxKnots
-        let stops = scale.stops.map { stop in
+        let count = max(scale.stops.count - 1, 1)
+        let stops = scale.stops.enumerated().map { index, stop in
             Gradient.Stop(
                 color: Color(red: stop.red, green: stop.green, blue: stop.blue),
-                location: CGFloat(stop.knots / top)
+                location: CGFloat(index) / CGFloat(count)
             )
         }
         return LinearGradient(stops: stops, startPoint: .leading, endPoint: .trailing)
+    }
+
+    private func text(_ mark: Double) -> String {
+        if mark == 0 { return "0" }
+        return mark < 1 ? String(format: ".%.0f", mark * 10) : String(format: "%.0f", mark)
     }
 
     var body: some View {
@@ -160,12 +179,12 @@ struct CurrentLegendView: View {
                 ZStack(alignment: .topLeading) {
                     Capsule().fill(gradient).frame(height: 8)
                     ForEach(marks, id: \.self) { mark in
-                        Text(mark == 0 ? "0" : String(format: mark < 1 ? "%.1f" : "%.0f", mark))
+                        Text(text(mark))
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(NT.textSecondary)
                             .fixedSize()
                             .position(
-                                x: min(geometry.size.width - 6, max(4, geometry.size.width * CGFloat(mark / scale.maxKnots))),
+                                x: min(geometry.size.width - 4, max(4, geometry.size.width * position(mark))),
                                 y: 17
                             )
                     }

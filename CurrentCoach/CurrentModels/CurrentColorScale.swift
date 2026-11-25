@@ -23,10 +23,10 @@ struct CurrentColorScale: Sendable, Equatable {
     static let standard = CurrentColorScale(stops: [
         Stop(knots: 0.00, red: 0.071, green: 0.118, blue: 0.290),
         Stop(knots: 0.10, red: 0.098, green: 0.220, blue: 0.494),
-        Stop(knots: 0.25, red: 0.086, green: 0.420, blue: 0.702),
-        Stop(knots: 0.40, red: 0.063, green: 0.627, blue: 0.741),
-        Stop(knots: 0.60, red: 0.141, green: 0.745, blue: 0.541),
-        Stop(knots: 0.80, red: 0.522, green: 0.820, blue: 0.290),
+        Stop(knots: 0.20, red: 0.086, green: 0.400, blue: 0.702),
+        Stop(knots: 0.30, red: 0.063, green: 0.600, blue: 0.741),
+        Stop(knots: 0.50, red: 0.141, green: 0.745, blue: 0.541),
+        Stop(knots: 0.75, red: 0.522, green: 0.820, blue: 0.290),
         Stop(knots: 1.00, red: 0.933, green: 0.843, blue: 0.220),
         Stop(knots: 1.50, red: 0.965, green: 0.576, blue: 0.161),
         Stop(knots: 2.00, red: 0.910, green: 0.298, blue: 0.188),
@@ -72,10 +72,24 @@ struct CurrentRaster: Sendable, Equatable {
     let height: Int
     let pixels: [UInt8]
 
-    /// Paints `frame` with `detail` pixels per grid cell. The edge of the
-    /// water fades out over the last half cell rather than ending in steps.
-    static func make(frame: CurrentFrame, scale: CurrentColorScale = .standard, detail: Int = 3, opacity: Double = 0.82) -> CurrentRaster {
+    /// Paints `frame` with `detail` pixels per grid cell.
+    ///
+    /// With a coastline (`mask`, at the same detail) the colour runs to the
+    /// real shore and stops there. Without one, the edge of the water fades
+    /// out over the last half cell rather than ending in steps.
+    static func make(
+        frame: CurrentFrame,
+        scale: CurrentColorScale = .standard,
+        detail: Int = 3,
+        opacity: Double = 0.82,
+        mask: CurrentWaterMask? = nil
+    ) -> CurrentRaster {
         let detail = max(1, detail)
+        var mask = mask
+        if let given = mask, given.detail != detail || given.cols != (frame.cols - 1) * detail + 1 || given.rows != (frame.rows - 1) * detail + 1 {
+            mask = nil
+        }
+        let frame = mask == nil ? frame : frame.filled(passes: 3)
         let width = (frame.cols - 1) * detail + 1
         let height = (frame.rows - 1) * detail + 1
         let table = scale.table()
@@ -114,11 +128,18 @@ struct CurrentRaster: Sendable, Equatable {
                     sumV += weight * Double(b)
                     total += weight
                 }
-                if total < 0.25 { continue }
+                let alpha: Double
+                if let mask {
+                    // The coastline decides where the colour is; the model only has to have a value nearby.
+                    if total <= 0 || !mask.isWater(row: height - 1 - py, col: px) { continue }
+                    alpha = opacity
+                } else {
+                    // Full strength from half the weight on water; fading to nothing at a quarter.
+                    if total < 0.25 { continue }
+                    alpha = opacity * min(1.0, (total - 0.25) / 0.25)
+                }
                 let knots = (sumU * sumU + sumV * sumV).squareRoot() / total * CurrentVector.knotsPerMetrePerSecond
                 let step = min(steps - 1, max(0, Int((knots * perKnot).rounded())))
-                // Full strength from half the weight on water; fading to nothing at a quarter.
-                let alpha = opacity * min(1.0, (total - 0.25) / 0.25)
                 let offset = (py * width + px) * 4
                 pixels[offset] = UInt8((Double(table[3 * step]) * alpha).rounded())
                 pixels[offset + 1] = UInt8((Double(table[3 * step + 1]) * alpha).rounded())

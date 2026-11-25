@@ -4,10 +4,20 @@ import Foundation
 /// for which days each has a map. Written by `currentmodel.publish` in
 /// `model/`, which also describes the format.
 struct CurrentModelManifest: Codable, Sendable, Equatable {
+    /// The venue's coastline, finer than the map: see `CurrentWaterMask`.
+    struct Mask: Codable, Sendable, Equatable {
+        let detail: Int
+        let rows: Int
+        let cols: Int
+        /// The bits, raw DEFLATE, base64.
+        let data: String
+    }
+
     struct Venue: Codable, Sendable, Equatable, Identifiable {
         let id: String
         let name: String
         let timeZone: String?
+        let mask: Mask?
         let south: Double
         let north: Double
         let west: Double
@@ -147,5 +157,39 @@ enum CurrentDay {
         let day = name(for: date)
         let start = self.start(of: day) ?? date
         return (day, date.timeIntervalSince(start) / 3600.0)
+    }
+}
+
+/// Where the sea is, several times finer than the map, so that the colour
+/// can end at the shore and not at the edge of a map cell. One bit per
+/// point; rows run from the south, each padded to a whole byte, with the
+/// most significant bit first.
+struct CurrentWaterMask: Sendable, Equatable {
+    /// Points per map cell, each way.
+    let detail: Int
+    let rows: Int
+    let cols: Int
+    let bits: [UInt8]
+
+    private var bytesPerRow: Int { (cols + 7) / 8 }
+
+    init?(detail: Int, rows: Int, cols: Int, bits: [UInt8]) {
+        guard detail >= 1, rows >= 2, cols >= 2, bits.count == rows * ((cols + 7) / 8) else { return nil }
+        self.detail = detail
+        self.rows = rows
+        self.cols = cols
+        self.bits = bits
+    }
+
+    /// From the manifest. `inflate` undoes raw DEFLATE.
+    init?(entry: CurrentModelManifest.Mask, inflate: (Data) throws -> Data) {
+        guard let packed = Data(base64Encoded: entry.data), let bits = try? inflate(packed) else { return nil }
+        self.init(detail: entry.detail, rows: entry.rows, cols: entry.cols, bits: [UInt8](bits))
+    }
+
+    /// Whether the point (row from the south, column from the west) is water.
+    func isWater(row: Int, col: Int) -> Bool {
+        guard row >= 0, row < rows, col >= 0, col < cols else { return false }
+        return bits[row * bytesPerRow + col / 8] & (0x80 >> UInt8(col % 8)) != 0
     }
 }

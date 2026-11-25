@@ -512,8 +512,9 @@ struct CurrentModelMapView: View {
             return
         }
         frame = next
+        let coast = models.mask
         let raster = await Task.detached(priority: .userInitiated) {
-            CurrentRaster.make(frame: next)
+            CurrentRaster.make(frame: next, detail: coast?.detail ?? 3, mask: coast)
         }.value
         guard !Task.isCancelled else { return }
         image = raster.cgImage

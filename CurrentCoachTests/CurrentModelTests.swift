@@ -51,7 +51,8 @@ struct CurrentModelMapTests {
     func manifestDecodes() throws {
         let json = """
         {"version":1,"venue":{"id":"hong-kong","name":"Hong Kong","lat":22.28,"lon":114.36,"timeZone":"Asia/Hong_Kong",
-        "south":22.109321,"north":22.450679,"west":114.146427,"east":114.573573,"rows":128,"cols":148},
+        "south":22.109321,"north":22.450679,"west":114.146427,"east":114.573573,"rows":128,"cols":148,
+        "mask":{"detail":4,"rows":509,"cols":589,"data":"AAEC"}},
         "frameSeconds":3600,"framesPerDay":25,"updated":1795654000,"default":"day-ahead",
         "models":[{"id":"day-ahead","name":"Physics + wind","summary":"Physics plus wind.","factors":["tide","forecast wind"],
         "days":[{"day":"2026-11-24","kind":"forecast","issued":1795514400,"bytes":326000},
@@ -64,6 +65,7 @@ struct CurrentModelMapTests {
         #expect(manifest.defaultModel == "day-ahead")
         #expect(manifest.venue.grid.rows == 128 && manifest.venue.grid.cols == 148)
         #expect(manifest.venue.timeZone == "Asia/Hong_Kong")
+        #expect(manifest.venue.mask?.detail == 4 && manifest.venue.mask?.cols == 589)
         #expect(manifest.days == ["2026-11-24", "2026-11-25", "2026-11-26"])
         #expect(manifest.model("day-ahead")?.entry(for: "2026-11-26")?.kind == "forecast")
         #expect(manifest.model("tide")?.entry(for: "2026-11-24") == nil)
@@ -206,6 +208,56 @@ struct CurrentMapDrawingTests {
             let a = raster.pixels[index + 3]
             #expect(raster.pixels[index] <= a && raster.pixels[index + 1] <= a && raster.pixels[index + 2] <= a)
         }
+    }
+
+    @Test("With a coastline the colour runs to the shore and stops there")
+    func rasterFollowsTheCoastline() throws {
+        // The model's water is the eastern half; the real shore is one grid cell further west.
+        let rows = 3
+        let cols = 5
+        var u = [Float](repeating: 0.2, count: rows * cols)
+        for row in 0..<rows { for col in 0..<2 { u[row * cols + col] = .nan } }
+        let frame = CurrentFrame(rows: rows, cols: cols, u: u, v: [Float](repeating: 0, count: rows * cols))
+
+        let filled = frame.filled(passes: 1)
+        #expect(filled.u[1] == 0.2 && filled.u[0].isNaN)
+        #expect(frame.filled(passes: 5).u.allSatisfy { $0 == 0.2 })
+        #expect(frame.filled(passes: 0) == frame)
+
+        // Coastline at four points per cell: 9 rows by 17 columns, water from column 4 eastward.
+        let detail = 4
+        let maskCols = (cols - 1) * detail + 1
+        let maskRows = (rows - 1) * detail + 1
+        let rowBits: [UInt8] = [0b0000_1111, 0b1111_1111, 0b1000_0000]
+        let mask = try #require(CurrentWaterMask(detail: detail, rows: maskRows, cols: maskCols, bits: Array(repeating: rowBits, count: maskRows).flatMap { $0 }))
+        #expect(!mask.isWater(row: 0, col: 3) && mask.isWater(row: 0, col: 4) && mask.isWater(row: 8, col: 16))
+        #expect(!mask.isWater(row: 9, col: 4) && !mask.isWater(row: 0, col: 17))
+        #expect(CurrentWaterMask(detail: detail, rows: maskRows, cols: maskCols, bits: [1, 2, 3]) == nil)
+
+        let raster = CurrentRaster.make(frame: frame, detail: detail, opacity: 1, mask: mask)
+        func alpha(x: Int, y: Int) -> UInt8 { raster.pixels[(y * raster.width + x) * 4 + 3] }
+        // Without the coastline the colour would stop at the model's edge (column 8); with it, at the shore (column 4).
+        #expect(alpha(x: 3, y: 4) == 0 && alpha(x: 4, y: 4) == 255 && alpha(x: 6, y: 4) == 255 && alpha(x: 16, y: 0) == 255)
+        let plain = CurrentRaster.make(frame: frame, detail: detail, opacity: 1)
+        let plainAlpha = plain.pixels[(4 * plain.width + 4) * 4 + 3]
+        #expect(plainAlpha == 0)
+
+        // A coastline of the wrong size is ignored rather than misdrawn.
+        #expect(CurrentRaster.make(frame: frame, detail: 2, opacity: 1, mask: mask) == CurrentRaster.make(frame: frame, detail: 2, opacity: 1))
+    }
+
+    @Test("The coastline in the manifest unpacks")
+    func maskFromManifest() throws {
+        let bits: [UInt8] = [0b1010_0000, 0b0100_0000]
+        let entry = CurrentModelManifest.Mask(detail: 2, rows: 2, cols: 3, data: Data([9, 9]).base64EncodedString())
+        // The app hands in the inflater; here it stands in for raw DEFLATE.
+        let mask = try #require(CurrentWaterMask(entry: entry) { packed in
+            #expect(packed == Data([9, 9]))
+            return Data(bits)
+        })
+        #expect(mask.isWater(row: 0, col: 0) && !mask.isWater(row: 0, col: 1) && mask.isWater(row: 0, col: 2))
+        #expect(!mask.isWater(row: 1, col: 0) && mask.isWater(row: 1, col: 1))
+        #expect(CurrentWaterMask(entry: entry) { _ in throw CurrentFieldError.wrongSize } == nil)
     }
 
     @Test("Streaks are carried downstream, stay on the water and inside their bounds")

@@ -164,6 +164,45 @@ struct CurrentFrame: Sendable, Equatable {
         velocity(x: grid.x(longitude: longitude), y: grid.y(latitude: latitude))
     }
 
+    /// The same map with the water's edge carried `passes` cells into the
+    /// land, each dry point taking the mean of its wet neighbours. For
+    /// drawing only: with a fine coastline to cut the colour off, this lets
+    /// the colour reach the real shore instead of stopping a cell short.
+    func filled(passes: Int) -> CurrentFrame {
+        var u = self.u
+        var v = self.v
+        for _ in 0..<max(0, passes) {
+            let beforeU = u
+            let beforeV = v
+            var changed = false
+            for row in 0..<rows {
+                for col in 0..<cols {
+                    let index = row * cols + col
+                    guard beforeU[index].isNaN || beforeV[index].isNaN else { continue }
+                    var sumU: Float = 0
+                    var sumV: Float = 0
+                    var count: Float = 0
+                    for r in max(0, row - 1)...min(rows - 1, row + 1) {
+                        for c in max(0, col - 1)...min(cols - 1, col + 1) {
+                            let neighbour = r * cols + c
+                            if beforeU[neighbour].isNaN || beforeV[neighbour].isNaN { continue }
+                            sumU += beforeU[neighbour]
+                            sumV += beforeV[neighbour]
+                            count += 1
+                        }
+                    }
+                    if count > 0 {
+                        u[index] = sumU / count
+                        v[index] = sumV / count
+                        changed = true
+                    }
+                }
+            }
+            if !changed { break }
+        }
+        return CurrentFrame(rows: rows, cols: cols, u: u, v: v)
+    }
+
     /// The fastest current on the map, in knots.
     var maxKnots: Double {
         var fastest: Float = 0

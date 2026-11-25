@@ -38,6 +38,8 @@ final class CurrentModelStore {
     private(set) var notice: String?
     private(set) var venues: [CurrentModelManifest.Venue] = []
     private(set) var manifest: CurrentModelManifest?
+    /// The venue's coastline, if the manifest carries one.
+    private(set) var mask: CurrentWaterMask?
     private(set) var modelID: String
     private(set) var window: CurrentValidationWindow
     private(set) var readings: CurrentValidationReadings
@@ -138,6 +140,9 @@ final class CurrentModelStore {
             fieldOrder.removeAll()
             validation = nil
         }
+        if manifest?.venue.mask != fresh.venue.mask || mask == nil {
+            mask = fresh.venue.mask.flatMap { CurrentWaterMask(entry: $0, inflate: CurrentModelInflater.inflate) }
+        }
         manifest = fresh
         failedDownloads.removeAll()
         Self.removeOldFiles()
@@ -223,6 +228,7 @@ final class CurrentModelStore {
     /// Forget everything, for sign-out or loss of access.
     func clear() {
         manifest = nil
+        mask = nil
         venues = []
         validation = nil
         fields.removeAll()
