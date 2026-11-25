@@ -18,6 +18,8 @@ struct CurrentModelMapView: View {
     @State private var probe: ProbePoint?
     @State private var showSelector = false
     @State private var frame: CurrentFrame?
+    /// The same current carried up to the coastline, for the streaks to follow right to the shore.
+    @State private var streakFrame: CurrentFrame?
     @State private var image: CGImage?
     @State private var engine = CurrentParticleEngine()
     @State private var framedVenue: String?
@@ -158,7 +160,8 @@ struct CurrentModelMapView: View {
                 }
                 .overlay {
                     CurrentFieldOverlay(
-                        frame: frame,
+                        frame: streakFrame ?? frame,
+                        coast: models.mask,
                         image: image,
                         grid: models.venue?.grid,
                         box: box,
@@ -567,15 +570,20 @@ struct CurrentModelMapView: View {
         guard !Task.isCancelled else { return }
         guard let next = models.frame(model: model, at: moment) else {
             frame = nil
+            streakFrame = nil
             image = nil
             return
         }
         frame = next
-        let coast = models.mask
-        let raster = await Task.detached(priority: .userInitiated) {
-            CurrentRaster.make(frame: next, detail: coast?.detail ?? 3, mask: coast)
+        let coast = models.mask.flatMap { $0.fits(rows: next.rows, cols: next.cols) ? $0 : nil }
+        let (raster, carried) = await Task.detached(priority: .userInitiated) {
+            (
+                CurrentRaster.make(frame: next, detail: coast?.detail ?? 3, mask: coast),
+                coast == nil ? nil : next.filled(passes: 3)
+            )
         }.value
         guard !Task.isCancelled else { return }
+        streakFrame = carried
         image = raster.cgImage
     }
 

@@ -42,7 +42,7 @@ before the day began.
 | `CurrentModels/CurrentModelManifest.swift` | the manifest, the grid, UTC days |
 | `CurrentModels/CurrentField.swift` | reading a day's file; the current at a place and time |
 | `CurrentModels/CurrentColorScale.swift` | speed to colour; the speed map as a picture |
-| `CurrentModels/CurrentParticles.swift` | the drifting streaks |
+| `CurrentModels/CurrentParticles.swift` | the drifting streaks, and how they keep off the land |
 | `CurrentModels/CurrentMapRegion.swift` | what the map shows; the zoom buttons' arithmetic |
 | `CurrentModels/CurrentValidation.swift` | the scores the server returns |
 | `Services/CurrentModelStore.swift` | downloads, the on-disk cache, the choices |
@@ -54,6 +54,8 @@ Everything under `CurrentModels/` uses Foundation only and is covered by
 `CurrentCoachTests/CurrentModelTests.swift`.
 
 The map zooms by pinch, and by the plus and minus buttons at its lower right, which halve or double the view; the third button brings the whole venue back.
+
+No streak crosses the coastline the manifest carries. The streaks follow the current carried up to that coastline; one that meets the land runs along the shore, and one with nowhere to go fades out where it is. The published maps do their part as well: close to land the publisher takes out the part of every model's current that crosses the shore.
 
 The map is kept north-up and flat (pan and zoom only) so that the picture
 and the streaks can be placed from two corners of the view.

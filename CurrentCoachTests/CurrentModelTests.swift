@@ -317,6 +317,60 @@ struct CurrentMapDrawingTests {
         #expect(system.particles.allSatisfy { $0.trail.isEmpty })
     }
 
+    @Test("With a coastline, streaks run along the shore and never onto the land")
+    func particlesKeepOffTheShore() throws {
+        // A map of 6 rows by 8 columns with a coastline twice as fine: 11 rows by 15 columns.
+        // The land is everything east of x = 4.5 (fine columns 10 to 14).
+        let detail = 2
+        let fineRows = 11
+        let fineCols = 15
+        var bits = [UInt8](repeating: 0, count: fineRows * 2)
+        for row in 0..<fineRows {
+            for col in 0..<10 { bits[row * 2 + col / 8] |= 0x80 >> UInt8(col % 8) }
+        }
+        let coast = try #require(CurrentWaterMask(detail: detail, rows: fineRows, cols: fineCols, bits: bits))
+        #expect(coast.fits(rows: 6, cols: 8) && !coast.fits(rows: 6, cols: 9))
+        #expect(coast.isWater(x: 4.7, y: 2) && !coast.isWater(x: 4.8, y: 2) && !coast.isWater(x: -1, y: 2) && !coast.isWater(x: 2, y: 9))
+
+        // A step that stays on the water is taken as it is; with no coastline, any step is.
+        let head = CurrentParticleSystem.Point(x: 4.6, y: 2)
+        let ashore = CurrentParticleSystem.Point(x: 5.0, y: 2.4)
+        #expect(CurrentParticleSystem.held(from: head, to: .init(x: 4.7, y: 2.4), coast: coast) == .init(x: 4.7, y: 2.4))
+        #expect(CurrentParticleSystem.held(from: head, to: ashore, coast: nil) == ashore)
+        // Heading north-east into a shore that runs north: it goes on northwards, more slowly.
+        let turned = try #require(CurrentParticleSystem.held(from: head, to: ashore, coast: coast))
+        #expect(coast.isWater(x: turned.x, y: turned.y) && turned.y > head.y && turned.x < ashore.x)
+        // Straight at the shore, with land on every side it could turn to: nowhere to go.
+        let cove = try #require(CurrentWaterMask(detail: 1, rows: 3, cols: 3, bits: [0b0000_0000, 0b0100_0000, 0b0000_0000]))
+        #expect(CurrentParticleSystem.held(from: .init(x: 1, y: 1), to: .init(x: 3, y: 1), coast: cove) == nil)
+
+        // Water flowing east and a little north at every point, the land included,
+        // as the map view hands it over: carried ashore so the streaks reach the coast.
+        let plane = 6 * 8
+        let frame = CurrentFrame(rows: 6, cols: 8, u: [Float](repeating: 0.3, count: plane), v: [Float](repeating: 0.1, count: plane))
+        let bounds = CurrentParticleSystem.Bounds(minX: 0, maxX: 7, minY: 0, maxY: 5)
+        var system = CurrentParticleSystem(count: 150, seed: 5)
+        var reachedTheShore = false
+        var ranAlongIt = false
+        for _ in 0..<300 {
+            let before = system.particles
+            system.step(frame: frame, bounds: bounds, dt: 0.05, cellsPerSecond: (x: 2, y: 2), coast: coast)
+            for (old, new) in zip(before, system.particles) {
+                for point in new.trail { #expect(coast.isWater(x: point.x, y: point.y)) }
+                guard let was = old.trail.last, let now = new.trail.last, new.age > old.age else { continue }
+                if now.x > 4.6 { reachedTheShore = true }
+                if was.x > 4.6, now.y > was.y + 0.001 { ranAlongIt = true }
+            }
+        }
+        #expect(reachedTheShore && ranAlongIt)
+
+        // A coastline made for another map is left out rather than misread.
+        let other = try #require(CurrentWaterMask(detail: 1, rows: 3, cols: 3, bits: [0, 0, 0]))
+        var free = CurrentParticleSystem(count: 20, seed: 2)
+        for _ in 0..<5 { free.step(frame: frame, bounds: bounds, dt: 0.05, cellsPerSecond: (x: 2, y: 2), coast: other) }
+        #expect(free.particles.contains { $0.trail.count > 1 })
+    }
+
     @Test("The zoom buttons halve and double the view and stop at their limits")
     func zoomButtons() throws {
         let grid = CurrentMapGrid(south: 22.1, north: 22.5, west: 114.1, east: 114.6, rows: 101, cols: 126)

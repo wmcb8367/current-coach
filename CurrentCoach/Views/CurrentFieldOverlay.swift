@@ -13,7 +13,8 @@ final class CurrentParticleEngine: @unchecked Sendable {
         frame: CurrentFrame,
         bounds: CurrentParticleSystem.Bounds,
         count: Int,
-        cellsPerSecond: (x: Double, y: Double)
+        cellsPerSecond: (x: Double, y: Double),
+        coast: CurrentWaterMask? = nil
     ) -> [CurrentParticleSystem.Particle] {
         lock.lock()
         defer { lock.unlock() }
@@ -22,7 +23,7 @@ final class CurrentParticleEngine: @unchecked Sendable {
         let elapsed = lastTick.map { now.timeIntervalSince($0) } ?? 0
         lastTick = now
         if elapsed > 0 {
-            system.step(frame: frame, bounds: bounds, dt: min(elapsed, 0.1), cellsPerSecond: cellsPerSecond)
+            system.step(frame: frame, bounds: bounds, dt: min(elapsed, 0.1), cellsPerSecond: cellsPerSecond, coast: coast)
         }
         return system.particles
     }
@@ -59,7 +60,10 @@ extension CurrentRaster {
 /// drift with the water. It sits on top of the map and lets every touch
 /// through to it.
 struct CurrentFieldOverlay: View {
+    /// The current the streaks follow.
     let frame: CurrentFrame?
+    /// The venue's coastline, which no streak crosses.
+    var coast: CurrentWaterMask?
     let image: CGImage?
     let grid: CurrentMapGrid?
     /// Where the grid's edges are on screen: left is west, top is north.
@@ -110,7 +114,8 @@ struct CurrentFieldOverlay: View {
             frame: frame,
             bounds: bounds,
             count: count,
-            cellsPerSecond: (x: timeScale / metres.x, y: timeScale / metres.y)
+            cellsPerSecond: (x: timeScale / metres.x, y: timeScale / metres.y),
+            coast: coast
         )
 
         // Four shades from faint to bright: a streak fades in, then out.

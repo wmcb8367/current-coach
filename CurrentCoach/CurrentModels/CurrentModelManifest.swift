@@ -192,4 +192,19 @@ struct CurrentWaterMask: Sendable, Equatable {
         guard row >= 0, row < rows, col >= 0, col < cols else { return false }
         return bits[row * bytesPerRow + col / 8] & (0x80 >> UInt8(col % 8)) != 0
     }
+
+    /// Whether a place given in the map's grid coordinates (columns from
+    /// the west edge, rows from the south edge) is water: the nearest
+    /// point of the coastline decides.
+    func isWater(x: Double, y: Double) -> Bool {
+        let col = (x * Double(detail)).rounded()
+        let row = (y * Double(detail)).rounded()
+        guard col >= 0, row >= 0, col < Double(cols), row < Double(rows) else { return false }
+        return isWater(row: Int(row), col: Int(col))
+    }
+
+    /// Whether this coastline belongs to a map of this many rows and columns.
+    func fits(rows mapRows: Int, cols mapCols: Int) -> Bool {
+        rows == (mapRows - 1) * detail + 1 && cols == (mapCols - 1) * detail + 1
+    }
 }
