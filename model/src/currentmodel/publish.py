@@ -36,6 +36,13 @@ File format (little-endian), one file per model and UTC day::
 Frames are hourly from 00:00 to 24:00 UTC (25 of them), so a file answers
 for any time of its day on its own.
 
+The manifest also carries the venue's coastline, finer than the map, so the
+app can end the colour at the shore and not at the edge of a 300 m cell:
+``venue.mask`` holds ``detail`` (points per map cell each way), ``rows`` and
+``cols`` (``(map rows - 1) * detail + 1`` and likewise), and ``data``: one
+bit per point, 1 for water, rows from the south, each row padded to a whole
+byte with the most significant bit first, then raw DEFLATE, then base64.
+
 Run it each evening, to a folder or to the server that hands the maps to
 the app::
 
@@ -51,6 +58,7 @@ had been issued the evening before it.
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime as dt
 import json
 import os
@@ -69,6 +77,7 @@ from .build import SPINUP_S, build_suite
 from .correction import Conditions
 from .dayahead import WIND_AVERAGE_S, WIND_FRACTION, WIND_SOURCES, assemble
 from .models import WindDrift
+from .venue import elevation
 from .wind import forecast_wind
 
 HOUR_S = 3600.0
@@ -80,6 +89,8 @@ FRAMES_PER_DAY = 25
 FLAG_DEFLATE = 1
 KEEP_DAYS = 10
 LEAD_IN_S = 12 * HOUR_S
+LAND_ABOVE_M = 0.5
+MASK_DETAIL = 4  # coastline points per map cell, each way: 75 m for a 300 m map
 API_PATH = "/api/current-models"
 
 ATTRIBUTION = [
@@ -224,6 +235,32 @@ def unpack(data: bytes):
     return values[:, 0], values[:, 1]
 
 
+def water_mask(grid: MapGrid, detail: int = MASK_DETAIL, cache_dir: str | Path | None = None) -> np.ndarray:
+    """Where the sea is, ``detail`` times finer than the map: True for water, row 0 the southernmost.
+
+    From the same elevation tiles that give the physics model its coast
+    (about 30 m at their finest), so the two agree.
+    """
+    lats = np.linspace(grid.south, grid.north, (grid.rows - 1) * detail + 1)
+    lons = np.linspace(grid.west, grid.east, (grid.cols - 1) * detail + 1)
+    lat, lon = np.meshgrid(lats, lons, indexing="ij")
+    # The same threshold as the physics grid: water reads zero in these tiles, give or take specks of noise.
+    return np.asarray(elevation(lat, lon, 12, cache_dir)) <= LAND_ABOVE_M
+
+
+def pack_mask(water: np.ndarray, detail: int) -> dict:
+    """The coastline as the manifest carries it (see the top of this module)."""
+    packer = zlib.compressobj(9, zlib.DEFLATED, -15)
+    bits = np.packbits(np.asarray(water, dtype=bool), axis=1).tobytes()
+    data = packer.compress(bits) + packer.flush()
+    return {"detail": int(detail), "rows": int(water.shape[0]), "cols": int(water.shape[1]), "data": base64.b64encode(data).decode("ascii")}
+
+
+def unpack_mask(entry: Mapping) -> np.ndarray:
+    bits = np.frombuffer(zlib.decompress(base64.b64decode(entry["data"]), -15), dtype=np.uint8)
+    return np.unpackbits(bits.reshape(entry["rows"], -1), axis=1)[:, : entry["cols"]].astype(bool)
+
+
 def merge_manifest(old: Mapping | None, new: Mapping, keep_days: int = KEEP_DAYS, today: str | None = None) -> dict:
     """The new manifest with the days of the old one that it does not replace.
 
@@ -364,10 +401,17 @@ def build_days(
     return files
 
 
-def manifest_for(venue: Mapping, grid: MapGrid, files: Mapping[str, Mapping[str, bytes]], kinds: Mapping[str, str], issued: Mapping[str, float]) -> dict:
+def manifest_for(
+    venue: Mapping,
+    grid: MapGrid,
+    files: Mapping[str, Mapping[str, bytes]],
+    kinds: Mapping[str, str],
+    issued: Mapping[str, float],
+    mask: Mapping | None = None,
+) -> dict:
     return {
         "version": 1,
-        "venue": {**venue, **grid.as_dict()},
+        "venue": {**venue, **grid.as_dict(), **({"mask": dict(mask)} if mask else {})},
         "frameSeconds": int(HOUR_S),
         "framesPerDay": FRAMES_PER_DAY,
         "updated": int(_time.time()),
@@ -398,7 +442,8 @@ def publish(target, venue: Mapping, manifest: Mapping, files: Mapping[str, Mappi
     merged = merge_manifest(json.loads(old) if old else None, manifest)
     target.put(path, json.dumps(merged, separators=(",", ":")).encode())
     old = target.get("index.json")
-    index = merge_index(json.loads(old) if old else None, merged["venue"])
+    listed = {key: value for key, value in merged["venue"].items() if key != "mask"}
+    index = merge_index(json.loads(old) if old else None, listed)
     target.put("index.json", json.dumps(index, separators=(",", ":")).encode())
     return merged
 
@@ -454,7 +499,13 @@ def run(
         files = build_days(lat, lon, width_m, height_m, wanted, grid, **common)
         for day in wanted:
             kinds[day], issued[day] = ("analysis" if day == today else "forecast"), now
-    return publish(target, venue, manifest_for(venue, grid, files, kinds, issued), files, log)
+    mask = None
+    try:
+        log("drawing the coastline")
+        mask = pack_mask(water_mask(grid, MASK_DETAIL, Path(cache_dir) / "tiles" if cache_dir else None), MASK_DETAIL)
+    except Exception as problem:  # the map still works without it, with a coarser shore
+        log(f"  coastline not available ({problem})")
+    return publish(target, venue, manifest_for(venue, grid, files, kinds, issued, mask), files, log)
 
 
 def main(argv: list[str] | None = None) -> None:

@@ -69,6 +69,24 @@ def test_sample_follows_the_model_and_the_water_mask():
     assert np.isfinite(u[:, 0, :]).all() and np.isnan(u[:, 1:, :]).all()
 
 
+def test_the_coastline_packs_into_the_manifest_and_back(monkeypatch):
+    grid = MapGrid(22.0, 22.1, 114.0, 114.1, 5, 4)
+
+    def fake_elevation(lat, lon, zoom, cache_dir):
+        assert zoom == 12
+        return np.where(lon > 114.05, 12.0, 0.0)  # land to the east
+
+    monkeypatch.setattr(publish, "elevation", fake_elevation)
+    water = publish.water_mask(grid, detail=4)
+    assert water.shape == (17, 13)
+    assert water[:, 0].all() and not water[:, -1].any()
+    entry = publish.pack_mask(water, 4)
+    assert (entry["detail"], entry["rows"], entry["cols"]) == (4, 17, 13)
+    assert isinstance(entry["data"], str)
+    assert (publish.unpack_mask(entry) == water).all()
+    json.dumps(entry)
+
+
 def _manifest(days, bytes_=10):
     return {"models": [{"id": "day-ahead", "days": [{"day": d, "kind": "forecast", "issued": 1, "bytes": bytes_} for d in days]}]}
 
@@ -114,6 +132,7 @@ def _fake_build(monkeypatch, calls):
 
     monkeypatch.setattr(publish, "forecast_wind", fake_wind)
     monkeypatch.setattr(publish, "build_suite", fake_suite)
+    monkeypatch.setattr(publish, "elevation", lambda lat, lon, zoom, cache_dir: np.where(lat > 22.05, 5.0, 0.0))
 
 
 def test_evening_run_publishes_today_once_then_only_the_days_ahead(tmp_path, monkeypatch):
@@ -141,7 +160,10 @@ def test_evening_run_publishes_today_once_then_only_the_days_ahead(tmp_path, mon
     assert np.isnan(wind_u[:, -1, :]).all() and np.isfinite(wind_u[:, 0, :]).all()
     both, _ = unpack((tmp_path / "hong-kong" / "day-ahead" / "2026-11-26.bin").read_bytes())
     assert both[6, 0, 0] == pytest.approx(u[6, 0, 0] + wind_u[6, 0, 0], abs=1.5 * publish.SCALE)
-    assert json.loads((tmp_path / "index.json").read_text())["venues"][0]["id"] == "hong-kong"
+    listed = json.loads((tmp_path / "index.json").read_text())["venues"][0]
+    assert listed["id"] == "hong-kong" and "mask" not in listed
+    coast = publish.unpack_mask(venue["mask"])
+    assert coast.shape == (81, 81) and coast[0].all() and not coast[-1].any()
 
     later = publish.run(target, "hong-kong", "Hong Kong", 22.0, 114.0, 20_000.0, 20_000.0, now=now + 86400.0, step_m=1000.0)
     days = later["models"][0]["days"]
