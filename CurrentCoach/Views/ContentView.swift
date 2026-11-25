@@ -5,8 +5,15 @@ enum AppTab: Int, CaseIterable, Identifiable {
     case list = 1
     case map = 2
     case account = 3
+    /// The current model maps: shown only to accounts the server allows.
+    case models = 4
 
     var id: Int { rawValue }
+
+    /// The tabs in the order they are shown, with the model maps only for those allowed.
+    static func visible(includingModels: Bool) -> [AppTab] {
+        [.measure, .list, .map] + (includingModels ? [.models] : []) + [.account]
+    }
 
     var title: String {
         switch self {
@@ -14,6 +21,7 @@ enum AppTab: Int, CaseIterable, Identifiable {
         case .list: return "List"
         case .map: return "Map"
         case .account: return "Account"
+        case .models: return "Models"
         }
     }
 
@@ -23,6 +31,7 @@ enum AppTab: Int, CaseIterable, Identifiable {
         case .list: return "rectangle.stack"
         case .map: return "map"
         case .account: return "person.crop.circle"
+        case .models: return "water.waves"
         }
     }
 }
@@ -43,6 +52,9 @@ struct ContentView: View {
     }()
     @State private var mapFocus: MapFocus?
     @State private var lastMeasurementCount: Int = 0
+    @State private var modelStore = CurrentModelStore()
+
+    private var showsModels: Bool { auth.isSignedIn && auth.canSeeCurrentModels }
 
     var body: some View {
         Group {
@@ -67,11 +79,19 @@ struct ContentView: View {
                 sync.syncPending()
             }
         }
+        .onChange(of: showsModels) { _, allowed in
+            // Access was withdrawn, or the account signed out: leave the tab and drop the maps.
+            if !allowed {
+                if selectedTab == .models { selectedTab = .measure }
+                modelStore.clear()
+            }
+        }
         .onChange(of: store.measurements.count) { old, new in
             if new > old { sync.didAddMeasurement() }
             lastMeasurementCount = new
         }
         .onAppear {
+            if selectedTab == .models && !showsModels { selectedTab = .measure }
             lastMeasurementCount = store.measurements.count
             sync.syncPending()
         }
@@ -102,6 +122,12 @@ struct ContentView: View {
             )
             .tag(AppTab.map.rawValue)
             .tabItem { Label(AppTab.map.title, systemImage: AppTab.map.icon) }
+
+            if showsModels {
+                CurrentModelMapView(auth: auth, measurements: store, models: modelStore)
+                    .tag(AppTab.models.rawValue)
+                    .tabItem { Label(AppTab.models.title, systemImage: AppTab.models.icon) }
+            }
 
             AccountView(auth: auth, sync: sync)
                 .tag(AppTab.account.rawValue)
@@ -142,7 +168,7 @@ struct ContentView: View {
                 .padding(.bottom, 20)
 
                 VStack(spacing: 4) {
-                    ForEach(AppTab.allCases) { tab in
+                    ForEach(AppTab.visible(includingModels: showsModels)) { tab in
                         SidebarRow(
                             tab: tab,
                             isSelected: selectedTab == tab,
@@ -181,6 +207,12 @@ struct ContentView: View {
             )
         case .account:
             AccountView(auth: auth, sync: sync)
+        case .models:
+            if showsModels {
+                CurrentModelMapView(auth: auth, measurements: store, models: modelStore)
+            } else {
+                AccountView(auth: auth, sync: sync)
+            }
         }
     }
 }

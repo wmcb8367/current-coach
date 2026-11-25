@@ -1,0 +1,44 @@
+name: iOS build and tests
+
+# Builds the app and runs its unit tests in a simulator, so a change that
+# does not compile is caught on the pull request rather than on a Mac later.
+on:
+  pull_request:
+    paths:
+      - "CurrentCoach/**"
+      - "CurrentCoachTests/**"
+      - "project.yml"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build and test
+        run: |
+          set -o pipefail
+          device=$(xcrun simctl list devices available | grep -m1 -oE 'iPhone [0-9]+( Pro| Plus| Pro Max)?' || true)
+          echo "Simulator: ${device:-none found}"
+          xcodebuild test \
+            -project CurrentCoach.xcodeproj \
+            -scheme CurrentCoach \
+            -destination "platform=iOS Simulator,name=${device:-iPhone 16}" \
+            CODE_SIGNING_ALLOWED=NO \
+            | grep -E "error|warning: unre|Test (Suite|run|Case)|✔|✘|passed|failed|BUILD|TEST" || true
+          test "${PIPESTATUS[0]}" -eq 0

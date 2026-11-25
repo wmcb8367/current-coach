@@ -24,6 +24,9 @@ targets:
     platform: iOS
     sources:
       - CurrentCoach
+    scheme:
+      testTargets:
+        - CurrentCoachTests
     settings:
       base:
         PRODUCT_NAME: CurrentCoach

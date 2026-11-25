@@ -54,9 +54,17 @@ struct Preferences: Codable, Sendable, Equatable {
     let currentCoachSyncEnabled: Bool
 }
 
-struct PreferencesResponse: Codable {
+/// What the signed-in account is allowed to use, as the server sees it.
+/// Fields are optional so that an older server still decodes.
+struct Entitlements: Codable, Sendable, Equatable {
+    /// The current model maps tab.
+    let currentModels: Bool?
+}
+
+struct PreferencesResponse: Codable, Sendable {
     let ok: Bool
     let preferences: Preferences
+    let entitlements: Entitlements?
 }
 
 @MainActor
@@ -131,27 +139,53 @@ final class APIClient {
 
     // MARK: - Preferences
 
-    func fetchPreferences(token: String) async throws -> Preferences {
-        let response: PreferencesResponse = try await send(
+    func fetchPreferences(token: String) async throws -> PreferencesResponse {
+        try await send(
             path: "/api/mobile/preferences",
             method: "GET",
             body: nil,
             token: token
         )
-        return response.preferences
     }
 
-    func updatePreferences(currentCoachSyncEnabled: Bool, token: String) async throws -> Preferences {
+    func updatePreferences(currentCoachSyncEnabled: Bool, token: String) async throws -> PreferencesResponse {
         let data = try JSONSerialization.data(withJSONObject: [
             "currentCoachSyncEnabled": currentCoachSyncEnabled,
         ])
-        let response: PreferencesResponse = try await send(
+        return try await send(
             path: "/api/mobile/preferences",
             method: "PATCH",
             body: data,
             token: token
         )
-        return response.preferences
+    }
+
+    // MARK: - Current models
+
+    /// One file of the current model maps (`index.json`, `<venue>/manifest.json`,
+    /// `<venue>/<model>/<day>.bin`) or a venue's validation report
+    /// (`<venue>/validation`). The server answers only for accounts that are
+    /// allowed to see the maps.
+    func currentModelData(path: String, token: String) async throws -> Data {
+        guard let url = URL(string: "/api/current-models/" + path, relativeTo: baseURL) else { throw APIError.badURL }
+        var req = URLRequest(url: url)
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await session.data(for: req)
+        } catch {
+            throw APIError.transport(error)
+        }
+
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 401 { throw APIError.notAuthenticated }
+        guard (200..<300).contains(status) else {
+            let message = (try? JSONDecoder().decode(ServerError.self, from: data))?.error
+            throw APIError.server(status: status, message: message)
+        }
+        return data
     }
 
     // MARK: - Internals
