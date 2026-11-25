@@ -146,6 +146,44 @@ what each model forecast one to seven days earlier, which is how the
 forecasts were scored. Its free service is for non-commercial use; a paid
 key is an argument.
 
+### Publishing maps for the app
+
+The app draws a venue's current as a moving map and lets the sailor switch
+between models. It cannot run the models, so `publish.py` runs them each
+evening and writes what the app needs: for each model and each UTC day, the
+current on a regular grid (300 m by default) at every hour, packed into one
+small file (about 0.3 MB), plus a manifest saying which models and days
+exist.
+
+```
+python -m currentmodel.publish --venue hong-kong --name "Hong Kong" \
+    --lat 22.28 --lon 114.36 --width-km 44 --height-km 38 --time-zone Asia/Hong_Kong \
+    --out maps --cache cache                      # into a folder
+CURRENT_MODELS_UPLOAD_TOKEN=... python -m currentmodel.publish ... --server https://example.com
+```
+
+Five models are published: `day-ahead` (physics run on the forecasts plus the
+wind-following surface layer; the default), `physics`, `tide`, `global`
+(NOAA's model as published) and `wind` (2% of the forecast wind alone). The
+simple ones are there on purpose: a model has earned its place only if it
+beats them against readings.
+
+Without `--days` it is the evening's run: tomorrow and the day after, from
+the forecasts in hand, and today as well the first time. With
+`--days 2026-11-23,2026-11-24` each past day is built from what had been
+issued the evening before it (18:00 by the sun at the venue). Either way a
+day's map is what the model said before the day began, so when the server
+scores a model against readings it scores a real prediction. The manifest
+keeps ten days.
+
+With `--server` the files go to the portal (`PUT /api/current-models/...`
+with the publishing token), which stores them privately and serves them only
+to accounts allowed to see them. `.github/workflows/current-models.yml` does
+this every evening; add a venue by adding an entry to its list. The file
+format is described at the top of `publish.py`; the app reads it in
+`CurrentCoach/CurrentModels/CurrentField.swift` and the portal in
+`lib/current-models/field.ts`.
+
 ### Choosing between models
 
 `ModelSuite.score(drifts)` scores each model on drifts it has not seen,
