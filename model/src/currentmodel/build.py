@@ -51,7 +51,7 @@ from .geo import KNOT_MS
 from .models import LUNAR_DAY_S, ModelSuite
 from .physics import Grid
 from .venue import build_grid
-from .wind import gfs_wind
+from .wind import forecast_wind, gfs_wind
 
 SPINUP_S = 12 * 3600.0
 MARGIN_M = 15_000.0
@@ -72,6 +72,7 @@ def build_suite(
     models: Iterable[str] = ("global", "venue-tide", "venue-weather"),
     log: Callable[[str], None] | None = None,
     edge_currents: bool = True,
+    issued_before: float | None = None,
     **solver_options,
 ) -> tuple[ModelSuite, Grid]:
     """Build the models for the box centred on (lat, lon) from ``start`` to ``end`` (epoch seconds).
@@ -85,10 +86,16 @@ def build_suite(
     alone, or a function giving better depths as in
     :func:`~currentmodel.venue.build_grid`. ``wind`` drives ``venue-weather``
     inside the venue: ``"gfs"`` fetches NOAA's weather model at the centre,
+    ``"forecast"`` the mean of several weather models
+    (:func:`~currentmodel.wind.forecast_wind`, steadier for the days ahead),
     ``None`` leaves it out, or pass a record of your own. ``rivers`` are
     (lat, lon, m3/s). With ``edge_currents`` the open edges take the global
     model's current as well as its level, which lets waves leave the venue
     and brings the coastal drift in.
+
+    ``issued_before`` (epoch seconds) builds from what had been issued by
+    then and nothing later: the way to test, after the fact, a prediction
+    made the evening before.
     """
     log = log or (lambda message: None)
     models = tuple(models)
@@ -113,15 +120,27 @@ def build_suite(
     global_currents = None
     if "global" in models or (edge_currents and physics):
         log("reading the global model's currents")
-        global_currents = stofs_module.currents(source, lat, lon, radius, start - (SPINUP_S if edge_currents and physics else 0.0), end)
+        global_currents = stofs_module.currents(
+            source, lat, lon, radius, start - (SPINUP_S if edge_currents and physics else 0.0), end, issued_before=issued_before
+        )
     if "global" in models:
         suite.add("global", global_currents, ["tide", "wind", "air pressure"], "NOAA global ocean model (STOFS-2D-Global) as published")
-    if wind == "gfs":
-        wind = None
+    if isinstance(wind, str):
+        if wind not in ("gfs", "forecast"):
+            raise ValueError('wind must be "gfs", "forecast", a record of the wind or None')
+        kind, wind = wind, None
         if "venue-weather" in models:
             try:
-                log("reading the wind from NOAA's weather model")
-                wind = gfs_wind(lat, lon, start - SPINUP_S, end, step_hours=1, cache_dir=cache / "gfs" if cache else None)
+                if kind == "gfs":
+                    log("reading the wind from NOAA's weather model")
+                    wind = gfs_wind(
+                        lat, lon, start - SPINUP_S, end, step_hours=1, cache_dir=cache / "gfs" if cache else None, issued_before=issued_before
+                    )
+                else:
+                    log("reading the wind from several weather models")
+                    wind = forecast_wind(
+                        lat, lon, start - SPINUP_S, end, cache_dir=cache / "wind" if cache else None, issued_before=issued_before, log=log
+                    )
             except Exception as problem:
                 log(f"  wind not available ({problem}); venue-weather runs without local wind")
     wind_function = (lambda t: wind.wind(t)) if wind is not None else None
@@ -129,7 +148,7 @@ def build_suite(
         if name not in models:
             continue
         log(f"reading the global model's {'tide' if tide_only else 'water level'} for the open edges")
-        levels = stofs_module.levels(source, lat, lon, radius, start - SPINUP_S, end, tide_only=tide_only)
+        levels = stofs_module.levels(source, lat, lon, radius, start - SPINUP_S, end, tide_only=tide_only, issued_before=issued_before)
         log(f"running the venue physics model: {name}")
         began = _time.time()
         flow = None

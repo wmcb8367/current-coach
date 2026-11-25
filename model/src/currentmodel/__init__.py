@@ -9,6 +9,7 @@ from .measurements import Drift, drifts_from_records, drop_repeats, load_drifts,
 from .models import Blend, FunctionModel, ModelSuite, Subtidal, WindDrift
 from .physics import Grid, ShallowWater
 from .scoring import cross_validate_by_day, score, score_baseline, score_live
+from .wind import blend_wind, ecmwf_wind, forecast_wind, gfs_wind, open_meteo_wind
 
 __all__ = [
     "Blend",
@@ -28,14 +29,19 @@ __all__ = [
     "TidalStreamField",
     "VenueCorrection",
     "WindDrift",
+    "blend_wind",
     "cross_validate_by_day",
     "drifts_from_records",
     "drop_repeats",
+    "ecmwf_wind",
     "edge_flow",
+    "forecast_wind",
     "gebco_depths",
+    "gfs_wind",
     "load_drifts",
     "load_hk_tidal_streams",
     "load_readings_csv",
+    "open_meteo_wind",
     "score",
     "score_baseline",
     "score_live",

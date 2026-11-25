@@ -117,6 +117,35 @@ live.observe(drift)                    # each time a drift ends
 u, v = live.velocity(lat, lon, now)    # the tuned current, anywhere in the venue
 ```
 
+### Predicting a day ahead
+
+`dayahead.py` builds tomorrow's current the evening before. By then the
+global ocean model has forecast the week ahead and several weather models
+have forecast the wind, so the whole chain can run on forecasts: read them,
+run the venue physics model on them (three minutes for the Hong Kong box),
+and add the share of the surface water that follows the wind. The result is
+a `LiveModel`, so on the day each reading on the water corrects it.
+
+```
+python -m currentmodel.dayahead --lat 22.28 --lon 114.36 --width-km 44 --height-km 38 \
+    --out tomorrow --cache cache --state live.json
+```
+
+```python
+from currentmodel.dayahead import day_ahead
+tomorrow = day_ahead(lat, lon, 44e3, 38e3, start, end, cache_dir="cache", state=yesterdays_state)
+u, v = tomorrow.velocity(lat, lon, time)     # any place and time of the day ahead
+tomorrow.model.observe(drift)                # on the day
+```
+
+The wind comes from `forecast_wind`, the mean of several weather models:
+by default ECMWF's IFS and AIFS (`ecmwf_wind`, read from the centre's open
+data on Google Cloud or AWS) and NOAA's GFS. `open_meteo_wind` reads any
+model Open-Meteo carries, among them Germany's ICON, and with `days_before`
+what each model forecast one to seven days earlier, which is how the
+forecasts were scored. Its free service is for non-commercial use; a paid
+key is an argument.
+
 ### Choosing between models
 
 `ModelSuite.score(drifts)` scores each model on drifts it has not seen,
@@ -133,6 +162,85 @@ model (`wind.py`). These have been built for Hong Kong and for Biscayne Bay.
 
 Still simulated: the tests of the correction, the scoring and the blend,
 which use a venue (`synthetic.py`) whose answer is known.
+
+### Third round: one day ahead
+
+The question was how good the prediction can be the evening before, and
+which wind forecast serves it best.
+
+**Wind forecasts.** Past forecasts of 14 weather models (Open-Meteo's
+archive of earlier runs) were scored against the anemometer on Waglan
+Island, the open-water station 10 km south of the race area: 2,328 times
+from three-hourly reports, January 2025 to November 2026. The measure is the
+vector error of the six-hour mean wind, which is what drives the current,
+after one scale factor per model fitted on other months (the anemometer
+stands 60 m above the sea). Seven models had forecasts for the whole period.
+
+| Six-hour mean wind, error in kn | latest run | 1 day ahead | 2 days | 3 days | off by over 10 kn, 1 day ahead |
+|---|---|---|---|---|---|
+| GFS (NOAA) | 5.1 | 6.0 | 6.6 | 6.9 | 8.4% of the time |
+| ICON (Germany) | 4.6 | 5.1 | 5.6 | 6.2 | 3.0% |
+| ECMWF IFS | 4.3 | 5.0 | 5.7 | 5.9 | 3.6% |
+| ECMWF AIFS (machine-learned) | 4.9 | 5.0 | 5.3 | 5.4 | 2.4% |
+| mean of IFS and AIFS | 4.4 | 4.8 | 5.2 | 5.3 | 2.1% |
+| mean of IFS, AIFS and GFS (the default) | 4.3 | 4.9 | 5.4 | 5.5 | 1.8% |
+| mean of IFS, AIFS and ICON | 4.2 | 4.6 | 5.0 | 5.3 | 1.3% |
+
+- The three leaders a day ahead are IFS, AIFS and ICON; GFS is a fifth
+  worse and is badly wrong more than twice as often. Canada's GEM, Japan's
+  GSM and China's model score near GFS (5.8, 6.0, 5.8 a day ahead).
+- A mean of models beats each of its members. The best mean a day ahead is
+  closer to the measured wind than GFS's latest run.
+- AIFS loses the least with lead time, so it matters more two and three
+  days out.
+- When the three leaders disagree most (the top third of their spread) the
+  mean's error is 5.2 kn against 4.3 kn otherwise: a mild warning sign.
+- The same ranking holds in the north-east monsoon months alone and in
+  September to November 2026 alone.
+
+**The current, the evening before.** For each of the seven days of
+readings the whole chain was rebuilt from what had been issued by 18:00
+local time the day before (`issued_before`): the global model's forecast at
+the open edges, forecast wind inside the physics model, and 2% of the
+forecast six-hour mean wind added. Nothing was fitted to the readings.
+
+| Against the 81 readings | error, kn |
+|---|---|
+| No current | 0.36 |
+| Built after the fact from best estimates (second round) | 0.19 |
+| Day ahead, GFS wind | 0.19 |
+| Day ahead, mean of IFS, AIFS and GFS (the default) | 0.20 |
+| Day ahead, mean of IFS and AIFS | 0.22 |
+| On the day, each reading correcting the next | 0.16 |
+
+- A day of lead costs nothing measurable. The physics run on forecasts
+  differs from the run on best estimates by 0.02 kn at the readings.
+- These seven days do not show the better wind forecasts giving a better
+  current: GFS did as well as any. The difference comes from two days with
+  12 readings (18 and 21 November) on which the measured current was weak
+  and did not follow the wind, so the source forecasting less wind scored
+  better; Waglan measured 13 and 16 kn on 19 and 21 November, where the
+  ECMWF models said 12 and 11 and GFS said 7. A 5 kn wind error is about
+  0.1 kn of current, so the wind forecast is a small part of the 0.19 kn on
+  an ordinary day and matters on the days a forecast is badly wrong. The
+  default takes the mean of three for that reason; more days of readings
+  will settle it, and the source is one argument.
+- What to carry from one day to the next: little. Weights retuned by a few
+  readings made the next day worse (0.19 to 0.22 kn with the live tuner's
+  usual freedom), so the day-ahead model holds them five times tighter; with
+  that, carrying them scored 0.19. What the water did yesterday beyond the
+  model (the pattern) did not help the next day at any memory from 12 hours
+  to 10 days.
+- The six-hour mean remains the best window with forecast wind (3 to 6
+  hours, against none, 12 or 24). The readings preferred 1.5% of the wind
+  to 2% with every source, by 0.01 to 0.03 kn; the tuner moves towards it.
+- On the day, the first reading is predicted no better than the evening
+  before (0.24 kn), and every later reading is (0.19 to 0.15 kn).
+
+`wind.py` had a fault this round uncovered: asked for hours beyond the
+newest published run it returned nothing, so a build for tomorrow ran with
+the wind frozen at its last value. It now continues with the newest run's
+forecast, as `stofs.py` already did.
 
 ### Second round: what improved the models and what did not
 
@@ -292,7 +400,9 @@ pytest
 ```
 
 The tests need no network. `build.py`, `wind.py` and `waves.py` need access
-to `*.amazonaws.com`, and `depths.py` to `download.gebco.net`.
+to `*.amazonaws.com`, `depths.py` to `download.gebco.net`, `ecmwf_wind` to
+`storage.googleapis.com` and `open_meteo_wind` to `api.open-meteo.com` and
+`previous-runs-api.open-meteo.com`.
 
 ## Conventions
 
@@ -307,6 +417,11 @@ to `*.amazonaws.com`, and `depths.py` to `download.gebco.net`.
 
 - Global currents and water levels: NOAA/NOS STOFS-2D-Global, public domain.
 - Wind and waves: NOAA/NCEP Global Forecast System and GFS-Wave, public domain.
+- Wind forecasts: ECMWF open data (IFS and AIFS), CC BY 4.0; other models
+  through Open-Meteo (https://open-meteo.com, CC BY 4.0, free service for
+  non-commercial use), among them ICON from Deutscher Wetterdienst.
+- Wind measurements used for scoring: Waglan Island, Hong Kong Observatory,
+  from NOAA's Global Historical Climatology Network hourly.
 - Depths: GEBCO Compilation Group (2026) GEBCO 2026 Grid.
 - Coastline, and depths where GEBCO is not used: Terrain Tiles on AWS Open Data, compiled by Mapzen
   from sources listed at

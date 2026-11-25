@@ -518,6 +518,7 @@ def levels(
     end: float,
     tide_only: bool = False,
     hours_per_run: int | None = None,
+    issued_before: float | None = None,
 ) -> LevelField:
     """Water levels around a venue from the global model, to drive a venue model.
 
@@ -528,13 +529,17 @@ def levels(
     standing higher or lower, and tilting, under wind and air pressure) and
     drops the node-to-node differences of a mesh that is kilometres coarse,
     which would otherwise drive currents of their own at the open edges.
+    With ``issued_before`` only runs started by then are used (see
+    :meth:`Stofs.read`).
     """
     nodes = stofs.nodes_near(lat, lon, radius_m)
-    tide = stofs.read("tide_level", nodes, start, end, LAST_RECORD_H if hours_per_run is None else hours_per_run)
+    tide = stofs.read(
+        "tide_level", nodes, start, end, LAST_RECORD_H if hours_per_run is None else hours_per_run, issued_before
+    )
     field = LevelField(tide.lat, tide.lon, tide.times, tide.values["zeta"])
     if tide_only:
         return field
-    full = stofs.read("level", nodes, start, end, 6 if hours_per_run is None else hours_per_run)
+    full = stofs.read("level", nodes, start, end, 6 if hours_per_run is None else hours_per_run, issued_before)
     common, in_tide, in_full = np.intersect1d(tide.times, full.times, return_indices=True)
     surge = full.values["zeta"][in_full] - tide.values["zeta"][in_tide]
     good = ~np.isnan(surge).any(axis=0)
