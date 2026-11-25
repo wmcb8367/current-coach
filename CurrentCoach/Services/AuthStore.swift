@@ -9,6 +9,9 @@ final class AuthStore {
         // Cached copy of the server preference so the toggle has a stable
         // local value to render before a preferences fetch completes.
         static let autoSyncCache = "CC_AUTO_SYNC_ENABLED_CACHED"
+        // Last answer from the server on whether this account may see the
+        // current model maps, so the tab does not blink on every launch.
+        static let currentModelsCache = "CC_CURRENT_MODELS_ENTITLED"
     }
 
     private(set) var token: String?
@@ -19,6 +22,11 @@ final class AuthStore {
     private(set) var autoSyncEnabled: Bool
     private(set) var isUpdatingPreference: Bool = false
     var preferenceError: String?
+
+    /// Whether this account may see the current model maps. The server
+    /// decides, both here and again on every request for a map; this only
+    /// controls whether the tab is shown.
+    private(set) var canSeeCurrentModels: Bool = false
 
     var isSignedIn: Bool { token != nil && user != nil }
 
@@ -38,6 +46,8 @@ final class AuthStore {
         if token == nil || user == nil {
             self.token = nil
             self.user = nil
+        } else {
+            self.canSeeCurrentModels = UserDefaults.standard.bool(forKey: Key.currentModelsCache)
         }
     }
 
@@ -56,6 +66,8 @@ final class AuthStore {
         user = nil
         KeychainStore.delete(Key.token)
         KeychainStore.delete(Key.userJSON)
+        canSeeCurrentModels = false
+        UserDefaults.standard.removeObject(forKey: Key.currentModelsCache)
     }
 
     func deleteAccount() async {
@@ -113,9 +125,12 @@ final class AuthStore {
         }
     }
 
-    private func applyPreferences(_ prefs: Preferences) {
+    private func applyPreferences(_ response: PreferencesResponse) {
+        let prefs = response.preferences
         autoSyncEnabled = prefs.currentCoachSyncEnabled
         UserDefaults.standard.set(prefs.currentCoachSyncEnabled, forKey: Key.autoSyncCache)
+        canSeeCurrentModels = response.entitlements?.currentModels ?? false
+        UserDefaults.standard.set(canSeeCurrentModels, forKey: Key.currentModelsCache)
     }
 
     private func perform(_ call: @Sendable @escaping () async throws -> AuthResponse) async {
