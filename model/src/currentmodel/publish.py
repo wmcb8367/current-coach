@@ -43,6 +43,11 @@ app can end the colour at the shore and not at the edge of a 300 m cell:
 bit per point, 1 for water, rows from the south, each row padded to a whole
 byte with the most significant bit first, then raw DEFLATE, then base64.
 
+No map sends water through that coastline. Before a day is packed, the part
+of every model's current that crosses the shore is taken out close to land
+(:mod:`currentmodel.shore`); the wind-following share and the global model
+know nothing of this venue's coast otherwise.
+
 Run it each evening, to a folder or to the server that hands the maps to
 the app::
 
@@ -77,6 +82,7 @@ from .build import SPINUP_S, build_suite
 from .correction import Conditions
 from .dayahead import WIND_AVERAGE_S, WIND_FRACTION, WIND_SOURCES, assemble
 from .models import WindDrift
+from .shore import Shore
 from .venue import elevation
 from .wind import forecast_wind
 
@@ -248,6 +254,13 @@ def water_mask(grid: MapGrid, detail: int = MASK_DETAIL, cache_dir: str | Path |
     return np.asarray(elevation(lat, lon, 12, cache_dir)) <= LAND_ABOVE_M
 
 
+def shore_for(grid: MapGrid, water: np.ndarray, detail: int = MASK_DETAIL) -> Shore:
+    """The coast as each point of the map sees it, from the coastline :func:`water_mask` drew."""
+    step_north = (grid.north - grid.south) * 111_320.0 / max(water.shape[0] - 1, 1)
+    step_east = (grid.east - grid.west) * 111_320.0 * np.cos(np.radians(0.5 * (grid.south + grid.north))) / max(water.shape[1] - 1, 1)
+    return Shore.from_mask(water, detail, step_north, step_east)
+
+
 def pack_mask(water: np.ndarray, detail: int) -> dict:
     """The coastline as the manifest carries it (see the top of this module)."""
     packer = zlib.compressobj(9, zlib.DEFLATED, -15)
@@ -366,12 +379,14 @@ def build_days(
     cache_dir: str | Path | None = None,
     wind_sources: Sequence[str] = WIND_SOURCES,
     log: Callable[[str], None] | None = None,
+    shore: Shore | None = None,
     **build_options,
 ) -> dict[str, dict[str, bytes]]:
     """Each model's file for each of ``days`` (consecutive UTC days), from one run of the models.
 
     Returns ``{model id: {day: file bytes}}``. With ``issued_before`` only
-    forecasts issued by then are used.
+    forecasts issued by then are used. With ``shore`` no model's current
+    crosses the coast.
     """
     log = log or (lambda message: None)
     cache = Path(cache_dir) if cache_dir else None
@@ -397,6 +412,8 @@ def build_days(
     for day in days:
         for info in MODELS:
             u, v = sample(models[info.id], grid, frame_times(day), water)
+            if shore is not None:
+                u, v = shore.along(u, v)
             files[info.id][day] = pack(u, v)
     return files
 
@@ -477,7 +494,14 @@ def run(
     venue = {"id": venue_id, "name": name, "lat": lat, "lon": lon}
     if time_zone:
         venue["timeZone"] = time_zone
-    common = dict(cache_dir=cache_dir, log=log, **build_options)
+    mask = shore = None
+    try:
+        log("drawing the coastline")
+        coast = water_mask(grid, MASK_DETAIL, Path(cache_dir) / "tiles" if cache_dir else None)
+        mask, shore = pack_mask(coast, MASK_DETAIL), shore_for(grid, coast)
+    except Exception as problem:  # the map still works without it, with a coarser shore
+        log(f"  coastline not available ({problem})")
+    common = dict(cache_dir=cache_dir, log=log, shore=shore, **build_options)
     files: dict[str, dict[str, bytes]] = {info.id: {} for info in MODELS}
     kinds: dict[str, str] = {}
     issued: dict[str, float] = {}
@@ -499,12 +523,6 @@ def run(
         files = build_days(lat, lon, width_m, height_m, wanted, grid, **common)
         for day in wanted:
             kinds[day], issued[day] = ("analysis" if day == today else "forecast"), now
-    mask = None
-    try:
-        log("drawing the coastline")
-        mask = pack_mask(water_mask(grid, MASK_DETAIL, Path(cache_dir) / "tiles" if cache_dir else None), MASK_DETAIL)
-    except Exception as problem:  # the map still works without it, with a coarser shore
-        log(f"  coastline not available ({problem})")
     return publish(target, venue, manifest_for(venue, grid, files, kinds, issued, mask), files, log)
 
 

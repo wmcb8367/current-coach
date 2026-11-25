@@ -168,6 +168,16 @@ wind-following surface layer; the default), `physics`, `tide`, `global`
 simple ones are there on purpose: a model has earned its place only if it
 beats them against readings.
 
+No published map sends water through the coast. The wind-following layer is
+one figure for the whole venue and the global model does not know this
+coast, so on their own they point straight at whatever land lies downstream.
+Before a day is packed, `shore.py` takes out the part of every model's
+current that crosses the shore: all of it at the shore, less further off,
+none beyond 600 m. Open water is left as the model had it. On the first
+Hong Kong readings this moved no model's score by more than 0.002 kn, and
+cut the current pointing into land at the shoreline by about three quarters
+(for the default model, from 0.09 kn to 0.02 kn on a windy day).
+
 Without `--days` it is the evening's run: tomorrow and the day after, from
 the forecasts in hand, and today as well the first time. With
 `--days 2026-11-23,2026-11-24` each past day is built from what had been

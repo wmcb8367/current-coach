@@ -174,6 +174,19 @@ def test_evening_run_publishes_today_once_then_only_the_days_ahead(tmp_path, mon
     assert days[1]["issued"] == int(now)            # the 26th keeps the forecast made before it began
 
 
+def test_no_published_map_sends_water_through_the_coast(tmp_path, monkeypatch):
+    _fake_build(monkeypatch, [])
+    now = publish.day_start("2026-11-25") + 10 * 3600.0
+    publish.run(Folder(tmp_path), "hong-kong", "Hong Kong", 22.0, 114.0, 6_000.0, 12_000.0, now=now, step_m=300.0)
+    # The land lies north of 22.05; the models set south of east at every point.
+    for model in ("day-ahead", "physics", "tide", "global"):
+        u, v = unpack((tmp_path / "hong-kong" / model / "2026-11-26.bin").read_bytes())
+        wet = np.flatnonzero(np.isfinite(u[6, :, 0]))
+        last, open_water = wet[-1], wet[0]
+        assert abs(v[6, last, 0]) < 0.75 * abs(v[6, open_water, 0]), model
+        assert u[6, last, 0] == pytest.approx(u[6, open_water, 0], abs=publish.SCALE), model
+
+
 def test_past_days_are_built_from_what_was_issued_the_evening_before(tmp_path, monkeypatch):
     calls = []
     _fake_build(monkeypatch, calls)
