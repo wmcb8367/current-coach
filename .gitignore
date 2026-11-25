@@ -7,3 +7,9 @@ DerivedData/
 build/
 xcuserdata/
 *.xcuserstate
+
+# Python
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.venv/

@@ -1,0 +1,80 @@
+name: Publish current model maps
+
+# Each evening at the venue: run the current models on the forecasts in hand
+# and publish tomorrow's maps to the server that hands them to the app.
+# Run it by hand with a list of days to build past days instead, each from
+# what had been issued the evening before it.
+on:
+  schedule:
+    - cron: "20 10 * * *" # 18:20 in Hong Kong
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Past UTC days to build, comma separated (YYYY-MM-DD). Empty for the evening's run."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: current-models
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        # One entry per venue. The box is centred on (lat, lon).
+        venue:
+          - id: hong-kong
+            name: Hong Kong
+            lat: "22.28"
+            lon: "114.36"
+            width_km: "44"
+            height_km: "38"
+            time_zone: Asia/Hong_Kong
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: model/pyproject.toml
+
+      - name: Install the model package
+        run: pip install -e "model[data]"
+
+      # Depths and coastline do not change from night to night.
+      - uses: actions/cache@v4
+        with:
+          path: model-cache
+          key: current-models-${{ matrix.venue.id }}-${{ github.run_id }}
+          restore-keys: current-models-${{ matrix.venue.id }}-
+
+      - name: Build and publish
+        env:
+          CURRENT_MODELS_UPLOAD_TOKEN: ${{ secrets.CURRENT_MODELS_UPLOAD_TOKEN }}
+          SERVER: ${{ vars.CURRENT_MODELS_SERVER || 'https://m2xsailing.com' }}
+          DAYS: ${{ inputs.days }}
+        run: |
+          if [ -z "$CURRENT_MODELS_UPLOAD_TOKEN" ]; then
+            if [ "${{ github.event_name }}" = "schedule" ]; then
+              echo "::warning::Nothing published: the repository secret CURRENT_MODELS_UPLOAD_TOKEN is not set."
+              exit 0
+            fi
+            echo "::error::The repository secret CURRENT_MODELS_UPLOAD_TOKEN is not set."
+            exit 1
+          fi
+          # Keep the depths and coastline; drop yesterday's weather and ocean downloads.
+          rm -rf model-cache/stofs model-cache/gfs model-cache/wind
+          python -m currentmodel.publish \
+            --venue "${{ matrix.venue.id }}" --name "${{ matrix.venue.name }}" \
+            --lat "${{ matrix.venue.lat }}" --lon "${{ matrix.venue.lon }}" \
+            --width-km "${{ matrix.venue.width_km }}" --height-km "${{ matrix.venue.height_km }}" \
+            --time-zone "${{ matrix.venue.time_zone }}" \
+            --server "$SERVER" --cache model-cache ${DAYS:+--days "$DAYS"}

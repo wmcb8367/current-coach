@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "currentmodel"
+version = "0.2.0"
+description = "Current models for Current Coach: a suite of models for any venue, ranked and corrected by drift measurements"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "scipy>=1.11"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+# Needed only to fetch open data: map tiles are PNG, older NOAA runs are netCDF-4.
+data = ["pillow>=10", "h5py>=3.10", "eccodes>=2.37"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
