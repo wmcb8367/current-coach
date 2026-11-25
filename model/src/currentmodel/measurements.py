@@ -69,6 +69,10 @@ def _parse_time(value) -> float:
     return stamp.timestamp()
 
 
+# Apps whose records carry the fix and the time at which the drift ended.
+STAMPED_AT_END = frozenset({"current-coach-android"})
+
+
 def drift_from_app_record(record: dict, default_user: str = "unknown") -> Drift | None:
     """Build a :class:`Drift` from one item of the app's sync payload.
 
@@ -87,11 +91,12 @@ def drift_from_app_record(record: dict, default_user: str = "unknown") -> Drift 
     dir_to = (float(record["fromDirectionDegrees"]) + 180.0) % 360.0
     u, v = uv_from_speed_dir(speed, dir_to)
 
-    # The app anchors the record at the start fix and start time. The drift
-    # samples the water between start and end, so move both to the middle.
+    # The iOS app anchors the record at the start fix and start time, the
+    # Android app at the end fix and end time. The drift samples the water
+    # between the two, so move place and time half a drift toward the middle.
     lat0 = float(record["latitude"])
     lon0 = float(record["longitude"])
-    half = 0.5 * duration
+    half = 0.5 * duration * (-1.0 if record.get("source") in STAMPED_AT_END else 1.0)
     lat = lat0 + np.degrees(float(v) * half / EARTH_RADIUS_M)
     lon = lon0 + np.degrees(float(u) * half / (EARTH_RADIUS_M * np.cos(np.radians(lat0))))
     time = _parse_time(record["timestamp"]) + half

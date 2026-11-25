@@ -49,6 +49,20 @@ def test_app_record_becomes_velocity_at_the_middle_of_the_drift():
     assert drift.time == pytest.approx(1795399200.0 + 60.0)
 
 
+def test_android_records_are_anchored_at_the_end_of_the_drift():
+    # The same drift as the iOS record above, as the Android app sends it:
+    # the last fix (60 m east of the start) and the time the drift ended.
+    lat_end, lon_end = to_latlon(60.0, 0.0, LAT0, LON0)
+    record = app_record(source="current-coach-android", timestamp="2026-11-23T02:02:00.000Z",
+                        latitude=float(lat_end), longitude=float(lon_end))
+    drift = drift_from_app_record(record)
+    ios = drift_from_app_record(app_record())
+    x, y = to_xy(drift.lat, drift.lon, LAT0, LON0)
+    assert x == pytest.approx(30.0, abs=0.01) and y == pytest.approx(0.0, abs=0.01)
+    assert drift.time == pytest.approx(ios.time)
+    assert (drift.u, drift.v) == (ios.u, ios.v)
+
+
 def test_invalid_and_zero_length_records_are_dropped():
     records = [app_record(), app_record(isValid=False), app_record(durationSeconds=0)]
     assert len(drifts_from_records(records)) == 1
