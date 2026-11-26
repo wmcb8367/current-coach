@@ -162,9 +162,12 @@ python -m currentmodel.publish --venue hong-kong --name "Hong Kong" \
 CURRENT_MODELS_UPLOAD_TOKEN=... python -m currentmodel.publish ... --server https://example.com
 ```
 
-Five models are published: `day-ahead` (physics run on the forecasts plus the
+Six models are published: `day-ahead` (physics run on the forecasts plus the
 wind-following surface layer; the default), `physics`, `tide`, `global`
-(NOAA's model as published) and `wind` (2% of the forecast wind alone). The
+(NOAA's model as published), `wind` (2% of the forecast wind alone) and
+`wind-memory` (Current Coach's `cc-wind-memory`: day-ahead plus the water
+that flows back after days of wind ease, weights from the Hong Kong
+readings; see the fourth round below). The
 simple ones are there on purpose: a model has earned its place only if it
 beats them against readings.
 

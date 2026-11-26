@@ -143,7 +143,7 @@ def test_evening_run_publishes_today_once_then_only_the_days_ahead(tmp_path, mon
     manifest = publish.run(target, "hong-kong", "Hong Kong", 22.0, 114.0, 20_000.0, 20_000.0, now=now, step_m=1000.0)
 
     assert manifest["default"] == "day-ahead"
-    assert [m["id"] for m in manifest["models"]] == ["day-ahead", "physics", "tide", "global", "wind"]
+    assert [m["id"] for m in manifest["models"]] == ["day-ahead", "physics", "tide", "global", "wind", "wind-memory"]
     days = manifest["models"][0]["days"]
     assert [(d["day"], d["kind"]) for d in days] == [("2026-11-25", "analysis"), ("2026-11-26", "forecast"), ("2026-11-27", "forecast")]
     assert calls[0]["issued_before"] is None
