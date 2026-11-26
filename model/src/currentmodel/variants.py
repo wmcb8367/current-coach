@@ -26,6 +26,18 @@ earn their place at a venue:
     water draining away along the coast.
 ``cc-all``
     Everything above.
+``cc-tide-timing``
+    ``cc-wind-memory`` plus a shift of the physics tide earlier or later:
+    the tide's rate of change, weighted in seconds, which is a small time
+    shift to first order.
+``cc-coastal-drift``
+    ``cc-wind-memory`` plus the global model's steady drift (its 25-hour
+    mean), for a coastal current the venue's physics run underplays.
+``cc-boat-windage``
+    ``cc-wind-memory`` plus one more wind weight for each boat, so a
+    drifter that catches more wind gets its own share: the start of each
+    user's personal model. Pass each boat's wind as ingredient
+    ``wind-<boat>`` (the wind at that boat's readings, zero at the others).
 
 Each can also run live, tuned reading by reading on the day (the tuner's
 "today's pattern" carries what the ingredients miss). Wanted ingredients
@@ -93,6 +105,23 @@ class WindMemory:
         return np.where(inside, self.fraction * u, np.nan), np.where(inside, self.fraction * v, np.nan)
 
 
+class TideShift:
+    """The rate of change of a model's current at the venue's centre: with a weight in seconds, a time shift.
+
+    ``model(t + s)`` is about ``model(t) + s * rate(t)``, so a weight of
+    -600 moves the tide ten minutes earlier.
+    """
+
+    def __init__(self, model, lat0: float, lon0: float, half_window_s: float = 1800.0):
+        self.model, self.lat0, self.lon0, self.half = model, float(lat0), float(lon0), float(half_window_s)
+
+    def velocity(self, lat, lon, time):
+        time = np.asarray(time, dtype=float)
+        u1, v1 = self.model.velocity(self.lat0, self.lon0, time + self.half)
+        u0, v0 = self.model.velocity(self.lat0, self.lon0, time - self.half)
+        return (np.asarray(u1) - u0) / (2 * self.half), (np.asarray(v1) - v0) / (2 * self.half)
+
+
 class ScalarPush:
     """A sensor's value times a fixed direction: one number (a gauge's surplus) as a current toward east or north.
 
@@ -128,6 +157,8 @@ INGREDIENTS = {
     "wind": Ingredient("wind", 0.015, 0.008),
     "memory": Ingredient("memory", 0.0, 0.03),
     "memory-turned": Ingredient("memory-turned", 0.0, 0.03),
+    "tide-shift": Ingredient("tide-shift", 0.0, 1800.0),   # seconds
+    "drift": Ingredient("drift", 0.0, 0.5),
     "level": Ingredient("level", 0.0, 1.0),          # per metre of gauge surplus, in m/s, east and north copies
     "level-north": Ingredient("level-north", 0.0, 1.0),
     "level-change": Ingredient("level-change", 0.0, 1.0),
@@ -141,7 +172,18 @@ VARIANTS = {
     "cc-wind-memory-turned": ["physics", "wind", "memory", "memory-turned"],
     "cc-sea-level": ["physics", "wind", "level", "level-north", "level-change", "level-change-north"],
     "cc-all": ["physics", "wind", "memory", "level", "level-north", "level-change", "level-change-north"],
+    "cc-tide-timing": ["physics", "wind", "memory", "tide-shift"],
+    "cc-coastal-drift": ["physics", "wind", "memory", "drift"],
 }
+
+
+def boat_windage_variant(boats) -> list[str]:
+    """The ingredients of ``cc-boat-windage`` for these boats; registers each boat's wind weight."""
+    names = ["physics", "wind", "memory"]
+    for boat in boats:
+        INGREDIENTS.setdefault(f"wind-{boat}", Ingredient(f"wind-{boat}", 0.0, 0.008))
+        names.append(f"wind-{boat}")
+    return names
 
 
 def fit_weights(values: np.ndarray, u: np.ndarray, v: np.ndarray, prior: np.ndarray, prior_sd: np.ndarray, noise: float) -> np.ndarray:

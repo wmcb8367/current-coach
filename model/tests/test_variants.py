@@ -41,3 +41,22 @@ def test_scoring_prefers_the_variant_with_the_ingredient_that_matters():
     rows = {r["variant"]: r for r in score_variants(values, truth[:, 0], truth[:, 1], days, times)}
     assert rows["cc-wind-memory-turned"]["day_ahead_kn"] < 0.8 * rows["cc-wind"]["day_ahead_kn"]
     assert rows["cc-wind-memory"]["weights"]["memory"] < -0.01
+
+
+def test_tide_shift_is_a_time_shift_to_first_order():
+    from currentmodel.models import FunctionModel
+    from currentmodel.variants import TideShift
+
+    period = 12.42 * HOUR
+    tide = FunctionModel(lambda lat, lon, t: (np.cos(2 * np.pi * np.asarray(t) / period), np.zeros_like(np.asarray(t, dtype=float))), 22.0, 114.0)
+    shift = TideShift(tide, 22.0, 114.0, half_window_s=60.0)
+    t = 3 * HOUR
+    u_shifted = float(tide.velocity(22.0, 114.0, t)[0] + 600.0 * shift.velocity(22.0, 114.0, t)[0])
+    assert u_shifted == pytest.approx(float(tide.velocity(22.0, 114.0, t + 600.0)[0]), abs=0.01)
+
+
+def test_boat_windage_gives_each_boat_its_own_wind_weight():
+    from currentmodel.variants import INGREDIENTS, boat_windage_variant
+
+    names = boat_windage_variant(["coach", "second"])
+    assert names[-2:] == ["wind-coach", "wind-second"] and "wind-second" in INGREDIENTS

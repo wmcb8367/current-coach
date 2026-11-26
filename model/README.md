@@ -301,6 +301,35 @@ Live: tuned reading by reading.
   kn on all 96 readings (0.19 on the first 81); 26 Nov is the hardest day
   so far (0.29).
 
+**More variants (same 96 readings, same day-ahead test).** Each adds one
+idea to `cc-wind-memory`; "better" is the share of whole-day resamples in
+which it beats `cc-wind-memory`.
+
+| Variant | Idea | Day ahead | Live | Better |
+| --- | --- | --- | --- | --- |
+| `cc-wind-memory` | (reference) | 0.219 kn | 0.162 kn | |
+| `cc-tide-timing` | physics tide shifted in time | 0.219 kn | 0.162 kn | 94%, gain under 0.001 kn |
+| `cc-coastal-drift` | + 0.22 of the global model's 25-hour mean drift | 0.216 kn | 0.162 kn | 100%, gain 0.004 kn |
+| `cc-boat-windage` | each boat its own share of the wind | 0.214 kn | 0.159 kn | 99%, gain 0.006 kn |
+| score-weighted ensemble | each day, the variants weighted by their errors on earlier days | 0.218 kn | | |
+
+- The tide here is about 0.03 kn at the race area, so its timing cannot
+  matter to these readings: the fit asks for 12 minutes earlier and gains
+  nothing. It belongs in the set for venues with real tidal streams.
+- The global model's steady drift helps a little at a fifth of its
+  strength: the physics run already carries most of the coastal current
+  through its open edges.
+- Per-boat windage is the clearest of the small gains. The coach boat's
+  drifter goes with 0.9% of the wind and the race log's with 1.5% (the
+  second boat's 2.6% rests on one day). How far a drifter is blown is a
+  property of the drifter, so it is learned per user in their personal
+  model, and the shared model should be fitted on water, not windage.
+- The ensemble does no better than its best member: with eight days, its
+  weights are mostly noise.
+- All these gains are under 0.01 kn, a twentieth of the error that is
+  left. The leftover is mostly what differs from day to day and place to
+  place within the course, not a missing venue-wide factor.
+
 What this data can and cannot support: 96 readings on 8 days, all near the
 middle of the day in one 7 by 5 km area. Each day is close to one sample of
 the weather, so the honest sample size is 8. That is enough to rank a model
