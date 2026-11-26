@@ -223,15 +223,17 @@ def read_charts(paths: Iterable[str | Path]) -> list[Chart]:
     for path in map(Path, paths):
         if path.is_dir():
             files = sorted(path.rglob("*"))
-            updates += sum(1 for f in files if f.suffix[1:].isdigit() and f.suffix != ".000" and len(f.suffix) == 4)
+            cells = {f.stem for f in files if f.suffix == ".000"}
+            updates += sum(1 for f in files if f.stem in cells and f.suffix != ".000" and len(f.suffix) == 4 and f.suffix[1:].isdigit())
             charts += [read_chart(f) for f in files if f.suffix == ".000"]
         elif path.suffix.lower() == ".zip":
             with zipfile.ZipFile(io.BytesIO(path.read_bytes())) as archive:
-                for entry in sorted(archive.namelist()):
-                    stem, _, ending = entry.rsplit("/", 1)[-1].rpartition(".")
+                files = [(entry, *entry.rsplit("/", 1)[-1].rpartition(".")[::2]) for entry in sorted(archive.namelist())]
+                cells = {stem for _, stem, ending in files if ending == "000"}
+                for entry, stem, ending in files:
                     if ending == "000":
                         charts.append(read_chart(archive.read(entry), stem))
-                    elif len(ending) == 3 and ending.isdigit():
+                    elif stem in cells and len(ending) == 3 and ending.isdigit():  # not the catalogue, CATALOG.031
                         updates += 1
         else:
             charts.append(read_chart(path))

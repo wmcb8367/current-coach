@@ -111,6 +111,17 @@ charts are free. Hong Kong's are sold by the Hydrographic Office (HK$540 a
 year) and may come encrypted, which this does not read. A bought chart, or
 a grid made from one, must stay out of this repository.
 
+Checked on two NOAA charts of Miami (US5FL22M at 1:12,000 and US4FL20M at
+1:80,000): the reader finds the same 9,769 soundings, the same contour
+depths and the same 1,320 depth areas, to within half a percent of area, as
+GDAL's S-57 driver. Depths built from the harbour chart sit a median 0.07 m
+from its own soundings, where GEBCO is 0.95 m off. And they agree with the
+crowd soundings of boats under way to between 0.1 and 0.6 m, the boats
+reading shallower as a transducer below the waterline should. The same
+comparison showed what else is in that archive: boats on their moorings
+logging one spot thousands of times, and ships whose sounders sit at the
+keel and read 1.5 to 5 m short.
+
 ### The drift correction
 
 `correction.py` fits a Gaussian process to measured minus modelled current.

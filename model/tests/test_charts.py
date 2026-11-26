@@ -192,6 +192,7 @@ def test_the_more_detailed_chart_wins_where_charts_overlap(tmp_path):
         archive.writestr("ENC_ROOT/APPROACH/APPROACH.000", approach_chart())
         archive.writestr("ENC_ROOT/HARBOUR/HARBOUR.000", harbour_chart())
         archive.writestr("ENC_ROOT/HARBOUR/HARBOUR.001", b"an update, which is not applied")
+        archive.writestr("ENC_ROOT/CATALOG.031", b"the list of what is in the archive, which is not an update")
     with pytest.warns(UserWarning, match="1 chart update"):
         charts = read_charts([tmp_path / "charts.zip"])
     assert [c.name for c in charts] == ["APPROACH", "HARBOUR"]
@@ -213,3 +214,13 @@ def test_an_encrypted_or_damaged_chart_says_what_is_wrong(tmp_path):
     with pytest.raises(ValueError, match="no charts"):
         chart_depth_source([], flat(10.0))
     assert isinstance(read_chart(approach_chart()), Chart)
+
+
+def test_a_folder_of_charts_is_read_like_the_archive(tmp_path):
+    for name, cell in (("APPROACH", approach_chart()), ("HARBOUR", harbour_chart())):
+        (tmp_path / "ENC_ROOT" / name).mkdir(parents=True)
+        (tmp_path / "ENC_ROOT" / name / f"{name}.000").write_bytes(cell)
+    (tmp_path / "ENC_ROOT" / "CATALOG.031").write_bytes(b"the list of what is in the folder")
+    (tmp_path / "ENC_ROOT" / "HARBOUR" / "HARBOUR.002").write_bytes(b"an update")
+    with pytest.warns(UserWarning, match="1 chart update"):
+        assert [c.name for c in read_charts([tmp_path])] == ["APPROACH", "HARBOUR"]
