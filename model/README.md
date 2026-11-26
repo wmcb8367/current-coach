@@ -69,10 +69,47 @@ tide there wrong.
 
 GEBCO is still coarse. In Hong Kong three quarters of its inshore cells
 are estimated from satellite gravity rather than sounded, and channels
-narrower than a kilometre are blurred. Better depths (a national chart, a
-survey, boats' own depth sounders) plug in through `depth_source` and
-nothing else changes. Hong Kong's electronic charts are free but need a
-registration and a licence agreement, so they are not wired in.
+narrower than a kilometre are blurred. Better depths plug in through
+`depth_source` and nothing else changes. Two kinds are built in, and
+`build.py` lays them over GEBCO with `--depth-logs` and `--charts`:
+
+**The boats' own soundings** (`sonarlog.py`, `soundings.py`). A chart
+plotter can log what its sounder sees: Lowrance, Simrad and B&G sonar logs
+(`.sl2`, `.sl3`), Garmin tracks with depth (`.gpx`), NMEA logs and plain
+tables are read. The tide is taken out with the tide at the time of each
+sounding (for Hong Kong the Observatory's hourly predictions,
+`hk_predicted_tide`) and the transducer's depth added. Each 50 m cell keeps
+the median of its soundings, a cell that disagrees with its neighbours is
+dropped as a false echo, and the difference from GEBCO is spread between
+the tracks: in full to 500 m from a sounding, fading to GEBCO at 1 km. This
+is free and covers exactly the water a team sails on.
+
+```
+python -m currentmodel.build --lat 22.27 --lon 114.30 --width-km 20 --height-km 20 --out clearwater \
+    --depth-logs logs/*.sl2 --tide-station TMW --transducer 0.4
+```
+
+The same code reads the IHO's open archive of crowdsourced soundings
+(public domain, hosted by NOAA). It holds nothing for Hong Kong, because it
+publishes data inside a country's waters only where that country agreed,
+and a great deal for United States coasts. Tried on 110,000 of its
+soundings from 21 boats in Biscayne Bay: taking the tide out brought
+different boats closer to each other (depths built from half the boats
+missed the other half's soundings by a median 0.64 m before and 0.44 m
+after; the other way round 0.42 m and 0.39 m). The boats still differ by
+about 0.4 m, because the archive does not say how deep each transducer
+sits, and GEBCO there is already built from surveys and is as close. So for anonymous soundings
+each boat needs levelling against the others first, which is not built;
+for a team's own boats the transducer depth is known.
+
+**Electronic charts** (`charts.py`): soundings, depth contours and depth
+areas from S-57 chart cells, with the more detailed chart winning where
+charts overlap, and no depth allowed outside the range its depth area
+gives. Chart depths are below chart datum, so say how far mean sea level
+is above it (`--chart-datum`, about 1.44 m at Tai Miu Wan). United States
+charts are free. Hong Kong's are sold by the Hydrographic Office (HK$540 a
+year) and may come encrypted, which this does not read. A bought chart, or
+a grid made from one, must stay out of this repository.
 
 ### The drift correction
 
