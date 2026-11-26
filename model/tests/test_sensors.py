@@ -89,3 +89,15 @@ def test_screening_finds_a_lagged_driver_and_rejects_noise():
     assert all(r.q > 0.05 or r.candidate.series == "wind" for r in rows)
     chosen, errors = drivers.select(target, cands, days, max_terms=3, min_gain=0.002)
     assert chosen[0].name == "wind mean 24h lag 24h" and errors[-1] < 0.5 * errors[0]
+
+
+def test_record_latest_does_not_repeat_unchanged_values(tmp_path, monkeypatch):
+    feed = b"Tide Station,Date,Time,Height(m)\nQuarry Bay,2026-11-26,06:40,0.80\n"
+
+    class Fake(sensors.Fetcher):
+        def get(self, url, max_age_s=None):
+            return feed
+
+    path = tmp_path / "latest.csv"
+    assert sensors.record_latest(path, 22.28, 114.33, Fake()) == 2  # one row from each of the two feeds
+    assert sensors.record_latest(path, 22.28, 114.33, Fake()) == 0

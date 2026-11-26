@@ -34,6 +34,7 @@ and they grow a history.
 from __future__ import annotations
 
 import csv
+import hashlib
 import datetime as dt
 import io
 import json
@@ -100,7 +101,7 @@ class Fetcher:
     def get(self, url: str, max_age_s: float | None = None) -> bytes:
         path = None
         if self.cache:
-            name = urllib.parse.quote(url, safe="")[:200] + f"-{abs(hash(url)) % 10**8}"
+            name = urllib.parse.quote(url, safe="")[:200] + "-" + hashlib.sha1(url.encode()).hexdigest()[:12]
             path = self.cache / name
             if path.exists() and (max_age_s is None or _time.time() - path.stat().st_mtime < max_age_s):
                 return path.read_bytes()
@@ -603,9 +604,9 @@ def to_hourly(times: np.ndarray, values: np.ndarray, grid: np.ndarray, how: str 
     out[have] = sums[have] if how == "sum" else sums[have] / counts[have]
     if how != "sum" and times.size > 1:
         filled = np.interp(grid, times, values)
-        nearest = np.min(np.abs(grid[:, None] - times[None, :]), axis=1) if times.size < 20000 else _nearest_gap(grid, times)
-        fill = ~have & (nearest <= max_gap_s / 2)
-        out[fill] = filled[fill]
+        if not have.all():
+            fill = ~have & (_nearest_gap(grid, times) <= max_gap_s / 2)
+            out[fill] = filled[fill]
     return out
 
 
@@ -674,7 +675,7 @@ def record_latest(path: str | Path, lat: float, lon: float, fetcher: Fetcher | N
     if path.exists():
         with open(path, newline="") as handle:
             seen = {(r["catalogue"], r["station"], r["time"]) for r in csv.DictReader(handle)}
-    new = [r for r in rows if (r["catalogue"], r["station"], str(r["time"])) not in seen and (r["catalogue"], r["station"], f"{r['time']}") not in seen]
+    new = [r for r in rows if (r["catalogue"], r["station"], f"{r['time']:.0f}") not in seen]
     if new:
         exists = path.exists()
         path.parent.mkdir(parents=True, exist_ok=True)
