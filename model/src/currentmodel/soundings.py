@@ -215,8 +215,9 @@ def depth_source_from_soundings(
     """A ``depth_source`` that follows the soundings and is ``base`` away from them.
 
     ``soundings`` are depths below mean sea level. ``base(lat, lon)`` is the
-    coarse source they correct, usually GEBCO; without one the result is NaN
-    further than ``reach_m`` from a sounding. ``cell_m`` is the size of the
+    coarse source they correct, usually GEBCO; without one, or where it has
+    no depth itself, the result is NaN further than ``reach_m`` from a
+    sounding. ``cell_m`` is the size of the
     cells soundings are sorted into, and should be about the spacing along a
     track or the venue's cell size, whichever is larger.
 
@@ -245,14 +246,16 @@ def depth_source_from_soundings(
     sounded = sounded.reshape(rows, columns)
     has = ~np.isnan(sounded)
 
-    under = None
+    under, uncovered = None, None
     if base is not None:
         cell_lat, cell_lon = to_latlon(*np.meshgrid(grid_x, grid_y), lat0, lon0)
         under = np.asarray(base(cell_lat, cell_lon), dtype=float)
-        if np.isnan(under).all():
+        uncovered = np.isnan(under)
+        if uncovered.all():
             under = None
-        elif np.isnan(under).any():
-            nearest = ndimage.distance_transform_edt(np.isnan(under), return_distances=False, return_indices=True)
+        elif uncovered.any():
+            # Only to have something to take differences from: where the base has nothing, it gets nothing back.
+            nearest = ndimage.distance_transform_edt(uncovered, return_distances=False, return_indices=True)
             under = under[nearest[0], nearest[1]]
     values = sounded if under is None else sounded - under
     has = _without_spikes(np.where(has, values, 0.0), has)
@@ -264,6 +267,8 @@ def depth_source_from_soundings(
         depth = np.where(trust > 0.0, spread, np.nan)
     else:
         depth = under + trust * spread
+        # Beyond the base's own cover there is no base to fade to: the soundings in full within reach, nothing past it.
+        depth = np.where(uncovered, np.where(trust > 0.0, under + spread, np.nan), depth)
     interpolate = RegularGridInterpolator((grid_y, grid_x), depth, bounds_error=False, fill_value=np.nan)
 
     def source(at_lat, at_lon) -> np.ndarray:

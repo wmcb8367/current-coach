@@ -57,6 +57,15 @@ def test_a_plotter_sonar_log_gives_one_sounding_per_moment(kind):
     assert np.allclose(found.time, START + np.arange(20))
 
 
+def test_a_channel_without_a_depth_does_not_hide_the_one_that_has_it():
+    # The side-scan channel is written first and carries no depth; the main channel at the same moment does.
+    pings = []
+    for second in range(5):
+        pings += [(LAT, LON, 0.0, float(second), 5), (LAT, LON, 8.0 + second, float(second), 0)]
+    found = read_lowrance(lowrance_log(2, pings, START))
+    assert found.depth.tolist() == pytest.approx([8.0, 9.0, 10.0, 11.0, 12.0])
+
+
 def test_a_sonar_log_from_a_plotter_without_a_clock_takes_the_time_it_is_given(tmp_path):
     log = lowrance_log(2, [(LAT, LON, 9.0, 0.0, 0), (LAT, LON, 9.5, 2.0, 0)], clock=1234.0)
     assert np.isnan(read_lowrance(log).time).all()
@@ -210,3 +219,20 @@ def test_depth_logs_are_reduced_and_laid_over_the_base(tmp_path):
     assert source(np.array([LAT]), np.array([LON]))[0] == pytest.approx(9.0 + 0.5 - 0.8, abs=0.01)
     assert any("1 soundings left out" in line for line in said)
     assert better_depths(None) is None
+
+
+def test_where_the_base_has_no_depth_the_result_has_none_away_from_the_soundings():
+    # The base covers only the water west of the track; the venue's own fallback needs to see the gap to the east.
+    def west_only(lat, lon):
+        return np.where(np.asarray(lon) < LON, 20.0, np.nan)
+
+    along = np.linspace(-500.0, 500.0, 200)
+    tracks = [to_latlon(0.0 * along + east, along, LAT, LON) for east in (300.0, 3000.0)]  # both east of the base's edge
+    soundings = Soundings(np.concatenate([t[0] for t in tracks]), np.concatenate([t[1] for t in tracks]), np.full(400, 8.0))
+    source = depth_source_from_soundings(soundings, west_only, cell_m=50.0, reach_m=400.0)
+    east_x = np.array([300.0, 650.0, 1650.0, 6000.0])
+    on_track, fading, between_tracks, far = source(*to_latlon(east_x, 0.0 * east_x, LAT, LON))
+    assert on_track == pytest.approx(8.0, abs=0.01)
+    assert fading == pytest.approx(8.0, abs=0.01)  # no base to fade to, so the soundings in full
+    assert np.isnan(between_tracks) and np.isnan(far)
+    assert source(*to_latlon(np.array([-900.0]), np.array([0.0]), LAT, LON))[0] == 20.0  # the base, where it has one

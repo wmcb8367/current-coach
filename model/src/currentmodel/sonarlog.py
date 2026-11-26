@@ -105,10 +105,12 @@ def read_lowrance(data: bytes, start_time: float | None = None) -> Soundings:
         start_time = clock
     time = np.full(depth.shape, np.nan) if start_time is None else start_time + elapsed
     good = np.isfinite(depth) & (depth > 0.0) & ((east != 0.0) | (north != 0.0)) & (np.abs(lat) < 89.0)
-    _, first = np.unique(elapsed, return_index=True)
-    one_each = np.zeros(depth.shape, dtype=bool)
+    # One sounding per moment, taken from the first channel that has a good one.
+    found = Soundings(lat, lon, depth, time).keep(good)
+    _, first = np.unique(elapsed[good], return_index=True)
+    one_each = np.zeros(len(found), dtype=bool)
     one_each[first] = True
-    return Soundings(lat, lon, depth, time).keep(good & one_each)
+    return found.keep(one_each)
 
 
 def _when(text: str) -> float:
