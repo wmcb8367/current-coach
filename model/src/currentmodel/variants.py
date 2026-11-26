@@ -30,6 +30,10 @@ earn their place at a venue:
     before the prediction, beyond its own tide: a slow ocean current or a
     weather-driven flow that is already running. Only where a venue has a
     current meter (Miami's Government Cut meters).
+``cc-ocean``
+    ``cc-wind`` plus NOAA's global ocean forecast (RTOFS,
+    :mod:`currentmodel.rtofs`) issued the day before: ocean currents such
+    as the Gulf Stream that the tide-and-surge models lack.
 ``cc-sea-level``
     Plus the coastal tide gauges: how far their level stands above or below
     the predicted tide and how fast that is changing. A falling surplus means
@@ -172,7 +176,8 @@ INGREDIENTS = {
     "memory": Ingredient("memory", 0.0, 0.03),
     "memory-turned": Ingredient("memory-turned", 0.0, 0.03),
     "wind-turned": Ingredient("wind-turned", 0.0, 0.008),
-    "nearby": Ingredient("nearby", 0.0, 1.0),        # share of the nearby meter's recent non-tidal current
+    "nearby": Ingredient("nearby", 0.0, 1.0),
+    "ocean": Ingredient("ocean", 0.0, 0.5),          # share of the ocean model's surface current        # share of the nearby meter's recent non-tidal current
     "level": Ingredient("level", 0.0, 1.0),          # per metre of gauge surplus, in m/s, east and north copies
     "level-north": Ingredient("level-north", 0.0, 1.0),
     "level-change": Ingredient("level-change", 0.0, 1.0),
@@ -186,6 +191,7 @@ VARIANTS = {
     "cc-wind-memory-turned": ["physics", "wind", "memory", "memory-turned"],
     "cc-wind-turned": ["physics", "wind", "wind-turned"],
     "cc-nearby-sensor": ["physics", "wind", "nearby"],
+    "cc-ocean": ["physics", "wind", "ocean"],
     "cc-sea-level": ["physics", "wind", "level", "level-north", "level-change", "level-change-north"],
     "cc-all": ["physics", "wind", "memory", "level", "level-north", "level-change", "level-change-north"],
 }

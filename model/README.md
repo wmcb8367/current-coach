@@ -262,6 +262,112 @@ model (`wind.py`). These have been built for Hong Kong and for Biscayne Bay.
 Still simulated: the tests of the correction, the scoring and the blend,
 which use a venue (`synthetic.py`) whose answer is known.
 
+### Fifth round: Miami, a venue with real current meters
+
+Hong Kong has no open current meter and eight days of drifts, so ideas
+like "a sensor nearby predicts the local current" cannot be tested there.
+Miami can: NOAA's PORTS current meters at the Government Cut approach have
+read every six minutes for over a year, and the charts are free. Miami was
+built as the second venue to test the method against that record and carry
+the lessons back.
+
+**Venue.** Centre 25.71 N, 80.1925 W, 27.5 by 36 km, 150 m cells, depths
+from 19 free NOAA chart cells over GEBCO (capped at 60 m, where the
+Florida Straits drop away; the open edge takes STOFS's level and current).
+Sensors (`python -m currentmodel.sensors --lat 25.70 --lon -80.17`): 78,
+including three current meters (LB M at the sea buoy, 38 m deep; LB1, 16
+m; LB3, 11 m; all on the approach channel outside the jetties), two at
+Port Everglades 44 km north, the Virginia Key and Port Everglades tide
+gauges with their wind and pressure (now read by `sensors.py`), and NOAA's
+harmonic current predictions for Government Cut (`load_noaa_current_predictions`).
+
+**What the charts fixed.** The terrain tiles close Government Cut and
+PortMiami's channels, so the bay had no harbour mouth. Charts now set the
+coastline wherever they cover the venue (`water` on a chart depth source),
+and channels that run at an angle to the grid, meeting only at cell
+corners, are opened (`venue.open_diagonals`). After that the cut carries
+the tide in step with NOAA's prediction (correlation 0.90) but at half its
+strength (1.2 against 2.6 kn at spring tides): a 300 m channel in 150 m
+cells, the same failure as Hong Kong's Tathong Channel.
+
+**A year of meter data (`meters.py`).** Tide fitted to Oct 2025 to May
+2026, tested on Jun to Nov 2026; day ahead means each day's sailing hours
+(9 to 16 local) predicted from what is known at 18:00 the evening before,
+held out a day at a time (308 to 414 days).
+
+| | sea buoy | LB1 | LB3 |
+| --- | --- | --- | --- |
+| current (rms) | 0.86 kn | 0.34 kn | 0.27 kn |
+| largest tidal constituent (M2) | 0.06 kn | 0.10 kn | 0.17 kn |
+| left by a perfect tide prediction | 0.69 kn | 0.29 kn | 0.22 kn |
+| + the meter's own last 6 h | 0.56 | 0.27 | 0.21 |
+| + the day's wind (6 h) | 0.67 | 0.27 | 0.21 |
+| + wind memory (pile-up) | no gain | no gain | no gain |
+| + tide gauge surplus | no gain | no gain | no gain |
+| + NOAA ocean forecast (RTOFS), issued the day before | 0.62 | 0.27 | 0.21 |
+| last 6 h + wind | **0.55** | **0.26** | **0.20** |
+
+- Outside the jetties the tide is a small part of the current. The sea
+  buoy sits on the Florida Current's inshore edge (0.28 kn north on
+  average, past 1.5 kn some weeks); neither STOFS nor the venue physics
+  model carries the ocean circulation, and RTOFS (1/12 degree, nearest
+  water 8 km out, `rtofs.py`) adds little once the meter's own reading is
+  known.
+- The non-tidal current lasts: correlation 0.54 a day later at the sea
+  buoy, 0.34 in the channel, gone after three days. That is why the
+  meter's own evening reading is the best single predictor of tomorrow.
+- A meter 0.6 to 1.6 km away explains about a third of the non-tidal
+  current at the same moment; one 44 km away (Port Everglades) about 5%.
+  A sensor nearby is worth a lot live and some the next day; a distant one
+  little.
+- The water answers the wind at 0.9 to 2.2% of its speed, turned 15 to 40
+  degrees to its right.
+- Rain (Miami airport) and the rivers GloFAS finds (screened with
+  `drivers.py`, 242 to 730 candidates) explain nothing measurable.
+- Willie's pile-up idea (water returning after days of wind ease) shows
+  nothing here, on an open coast with a strong ocean current; Hong Kong's
+  evidence for it is from a semi-enclosed coast and should be tested again
+  on more Hong Kong days rather than assumed general.
+
+**The Current Coach variants at the meters**, four weeks of physics runs
+(10 to 17 Jan, Apr, Jul and Oct 2026), 224 sailing hours a meter. Day-ahead
+error over no-current error (lower is better):
+
+| Variant | sea buoy | LB1 | LB3 |
+| --- | --- | --- | --- |
+| `cc-physics` | 1.03 | 1.02 | 0.96 |
+| `cc-wind` | 1.03 | 1.02 | 0.97 |
+| `cc-wind-memory` | 1.04 | 1.03 | 0.97 |
+| `cc-wind-turned` (new) | 0.98 | **0.95** | **0.90** |
+| `cc-ocean` (new) | **0.83** | 0.97 | 0.94 |
+| `cc-sea-level` | 1.08 | 1.06 | 1.00 |
+| `global` as published | 1.02 | 1.02 | 0.91 |
+
+The physics model earns little weight at the outer two meters: its tide
+there is about twice the measured one, and in April its weather run drives
+a 0.3 kn southward flow the meter did not see. These four weeks are short
+next to the year above; the meter study is the stronger evidence.
+
+**What this means for Hong Kong**
+1. Narrow channels need finer cells or a channel correction: Government
+   Cut and Tathong Channel both come out at about half strength.
+2. Let the wind response turn: `cc-wind-turned` was the best of the
+   wind variants at the two inshore meters. Hong Kong's eight days found no
+   turn; test again as days of readings grow.
+3. Yesterday's non-tidal current is the best day-ahead predictor where it
+   can be measured. In Hong Kong the drifts of the last sailing day play
+   that part: carry the live tuner's "today's pattern" into tomorrow with a
+   memory of about a day, fading, instead of resetting overnight.
+4. Charts set the coastline as well as the depths; with a Hong Kong chart
+   the harbour and channel mouths would be checked the same way.
+5. Wind memory and sea level should stay separate variants, not defaults,
+   until Hong Kong's own readings decide.
+
+Commands: `python -m currentmodel.meters --sensors miami-sensors.json
+--start 2025-10-01 --end 2026-11-26 --utc-offset -5 --out miami-meters.json`
+(any venue with NOAA current meters). Figure:
+`miami-meters-2026-11-26.png` in the project files.
+
 ### Fourth round: sensors around the venue, and the Current Coach variants
 
 The aim is a three-tier model: the physics model on the best depths (tier
