@@ -355,6 +355,31 @@ def chart_depth_source(
             _fill(covered, edge, True, None, frame)
         taken |= covered
 
+    covered_any = np.zeros((rows, columns), dtype=bool)
+    for chart in charts:
+        for edge in chart.coverage or [b for _, _, b in chart.areas]:
+            _fill(covered_any, edge, True, None, frame)
+
+    def water(at_lat, at_lon):
+        """What the charts say each point is: 1 water, 0 land, NaN where no chart covers it.
+
+        Water is inside a depth area whose deep end lies below mean sea level
+        (drying banks that cover at high water count as water, as in the
+        model's shallowest cells); land is any charted place outside every
+        depth area. Harbours, cuts and dredged channels the terrain tiles
+        miss come from here.
+        """
+        at_lat, at_lon = np.asarray(at_lat, dtype=float), np.asarray(at_lon, dtype=float)
+        row, column, on_grid = cell_of(at_lat, at_lon)
+        out = np.full(at_lat.shape, np.nan)
+        r, c = row[on_grid], column[on_grid]
+        deep, shallow = high[r, c], low[r, c]
+        # A dredged channel often states only its least depth.
+        wet = np.where(np.isfinite(deep), deep > 0.0, np.isfinite(shallow) & (shallow > 0.0))
+        verdict = np.where(wet, 1.0, 0.0)
+        out[on_grid] = np.where(covered_any[r, c], verdict, np.nan)
+        return out
+
     def limits(at_lat, at_lon):
         at_lat, at_lon = np.asarray(at_lat, dtype=float), np.asarray(at_lon, dtype=float)
         row, column, on_grid = cell_of(at_lat, at_lon)
@@ -374,5 +399,8 @@ def chart_depth_source(
             under = np.where(np.isnan(deep), under, np.minimum(under, deep))
             return np.where(np.isnan(under), np.nan, np.maximum(under, shallowest_m))
 
+        source.water = water
         return source
-    return depth_source_from_soundings(found, base, cell_m=cell, reach_m=reach_m, limits=limits, shallowest_m=shallowest_m)
+    source = depth_source_from_soundings(found, base, cell_m=cell, reach_m=reach_m, limits=limits, shallowest_m=shallowest_m)
+    source.water = water
+    return source

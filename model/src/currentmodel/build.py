@@ -105,7 +105,10 @@ def better_depths(
                 log(f"  {raw - len(soundings)} soundings left out: no time, or outside the tide series")
         log(f"depths from {len(soundings)} soundings in {len(logs)} logs")
         if len(soundings):
+            charted = getattr(source, "water", None)
             source = depth_source_from_soundings(soundings, source, cell_m=cell_m, reach_m=reach_m)
+            if charted is not None:
+                source.water = charted
     return source
 
 

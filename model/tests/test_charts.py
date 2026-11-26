@@ -224,3 +224,25 @@ def test_a_folder_of_charts_is_read_like_the_archive(tmp_path):
     (tmp_path / "ENC_ROOT" / "HARBOUR" / "HARBOUR.002").write_bytes(b"an update")
     with pytest.warns(UserWarning, match="1 chart update"):
         assert [c.name for c in read_charts([tmp_path])] == ["APPROACH", "HARBOUR"]
+
+
+def island_chart() -> bytes:
+    """Charted 2 km square with water only in its middle 0.8 km (a lagoon); the rest of it is land."""
+    cell = Cell("LAGOON", 12000)
+    outer, lagoon = square(0.010), square(0.004)
+    cell.node(1, *outer[0])
+    cell.node(2, *lagoon[0])
+    cell.edge(1, 1, 1, outer[1:])
+    cell.edge(2, 2, 2, lagoon[1:])
+    cell.soundings(1, [(LAT, LON, 3.0)])
+    cell.object(302, 3, {18: 1}, [(EDGE, 1, 1, 1)])
+    cell.object(42, 3, {87: 2, 88: 5}, [(EDGE, 2, 1, 1)])
+    return cell.bytes()
+
+
+def test_charts_say_where_water_and_land_are():
+    source = chart_depth_source(read_chart(island_chart(), "LAGOON"), flat(30.0), cell_m=50.0)
+    lat = np.array([LAT, LAT + 0.007, LAT + 0.2])
+    lon = np.array([LON, LON, LON])
+    lagoon, land, beyond = source.water(lat, lon)
+    assert lagoon == 1.0 and land == 0.0 and np.isnan(beyond)

@@ -267,6 +267,19 @@ def coops_stations(texts: dict[str, str], lat: float, lon: float, radius_km: flo
 def parse_coops(text: str, kind: str) -> dict[str, tuple[np.ndarray, np.ndarray]]:
     data = json.loads(text).get("data", [])
     t = np.array([_epoch(d["t"]) for d in data])
+
+    def number(d, name):
+        try:
+            return float(d.get(name))
+        except (TypeError, ValueError):
+            return math.nan
+
+    if kind == "wind":  # metric: m/s, direction it blows from
+        speed = np.array([number(d, "s") for d in data])
+        towards = np.radians((np.array([number(d, "d") for d in data]) + 180.0) % 360.0)
+        return {"wind_u": (t, speed * np.sin(towards)), "wind_v": (t, speed * np.cos(towards))}
+    if kind == "air_pressure":
+        return {"pressure": (t, np.array([number(d, "v") for d in data]))}
     if kind == "currents":
         speed = np.array([float(d["s"]) * 0.514444 if d.get("s") not in (None, "") else math.nan for d in data])  # knots
         towards = np.radians([float(d["d"]) if d.get("d") not in (None, "") else math.nan for d in data])
@@ -522,7 +535,17 @@ def fetch(sensor: Sensor | dict, start: float, end: float, fetcher: Fetcher | No
                      "time_zone": "gmt", "units": "english" if kind == "currents" else "metric", "format": "json", "application": USER_AGENT}
             if product == "water_level":
                 query["datum"] = "MSL"
-            add(parse_coops(fetcher.get(COOPS_DATA + "?" + urllib.parse.urlencode(query)).decode(), kind))
+            add(parse_coops(fetcher.get(COOPS_DATA + "?" + urllib.parse.urlencode(query), max_age_s=None if b < _time.time() - 86400 else 1800).decode(), kind))
+            if kind == "waterlevels":
+                # Many water level stations also carry a weather station: read its wind and pressure where it has them.
+                for met in ("wind", "air_pressure"):
+                    query.update(product=met, units="metric")
+                    query.pop("datum", None)
+                    try:
+                        text = fetcher.get(COOPS_DATA + "?" + urllib.parse.urlencode(query), max_age_s=None if b < _time.time() - 86400 else 1800).decode()
+                        add(parse_coops(text, met))
+                    except (RuntimeError, ValueError, KeyError):
+                        continue
     elif s.catalogue == "ndbc":
         add(parse_ndbc(fetcher.get(NDBC_REALTIME.format(id=s.id), max_age_s=3600).decode()))
     elif s.catalogue == "glofas":

@@ -20,6 +20,16 @@ earn their place at a venue:
     with the old wind, negative if it returns. ``cc-wind-memory-turned``
     adds a copy turned a quarter turn, so the return can set across the old
     wind as the Earth's rotation turns it.
+``cc-wind-turned``
+    ``cc-wind`` plus a copy of the wind turned a quarter turn to the right,
+    so the fit can set the surface water at an angle to the wind, as the
+    Earth's rotation does (the Miami current meters answer the wind 15 to
+    40 degrees to its right).
+``cc-nearby-sensor``
+    ``cc-wind`` plus what a current meter nearby measured over the hours
+    before the prediction, beyond its own tide: a slow ocean current or a
+    weather-driven flow that is already running. Only where a venue has a
+    current meter (Miami's Government Cut meters).
 ``cc-sea-level``
     Plus the coastal tide gauges: how far their level stands above or below
     the predicted tide and how fast that is changing. A falling surplus means
@@ -114,6 +124,39 @@ class ScalarPush:
         return x * self.east, x * self.north
 
 
+class SensorPersistence:
+    """A current meter's recent flow beyond its tide, carried forward as a steady current over the venue.
+
+    ``times``, ``u`` and ``v`` are the meter's residual (measured minus its
+    own tidal fit, :func:`currentmodel.meters.tidal_split`). At each time the
+    answer is the mean over the ``window_s`` before ``issued(time)``: for a
+    day-ahead prediction, the evening before; by default the time itself
+    (live).
+    """
+
+    def __init__(self, times, u, v, lat0: float, lon0: float, window_s: float = 6 * HOUR, issued=None):
+        good = np.isfinite(u) & np.isfinite(v)
+        self.times = np.asarray(times, dtype=float)[good]
+        self.u, self.v = np.asarray(u, dtype=float)[good], np.asarray(v, dtype=float)[good]
+        self.lat0, self.lon0, self.window_s = float(lat0), float(lon0), float(window_s)
+        self.issued = issued or (lambda t: t)
+        self._cu = np.concatenate([[0.0], np.cumsum(self.u)])
+        self._cv = np.concatenate([[0.0], np.cumsum(self.v)])
+
+    def velocity(self, lat, lon, time):
+        lat, lon, time = np.broadcast_arrays(*(np.asarray(a, dtype=float) for a in (lat, lon, time)))
+        end = np.asarray(self.issued(time), dtype=float)
+        i1 = np.searchsorted(self.times, end, side="right")
+        i0 = np.searchsorted(self.times, end - self.window_s, side="right")
+        n = i1 - i0
+        expected = max(1.0, 0.5 * self.window_s / max(np.median(np.diff(self.times)) if self.times.size > 1 else HOUR, 1.0))
+        ok = n >= expected
+        with np.errstate(invalid="ignore", divide="ignore"):
+            u = (self._cu[i1] - self._cu[i0]) / n
+            v = (self._cv[i1] - self._cv[i0]) / n
+        return np.where(ok, u, np.nan), np.where(ok, v, np.nan)
+
+
 @dataclass
 class Ingredient:
     name: str
@@ -128,6 +171,8 @@ INGREDIENTS = {
     "wind": Ingredient("wind", 0.015, 0.008),
     "memory": Ingredient("memory", 0.0, 0.03),
     "memory-turned": Ingredient("memory-turned", 0.0, 0.03),
+    "wind-turned": Ingredient("wind-turned", 0.0, 0.008),
+    "nearby": Ingredient("nearby", 0.0, 1.0),        # share of the nearby meter's recent non-tidal current
     "level": Ingredient("level", 0.0, 1.0),          # per metre of gauge surplus, in m/s, east and north copies
     "level-north": Ingredient("level-north", 0.0, 1.0),
     "level-change": Ingredient("level-change", 0.0, 1.0),
@@ -139,6 +184,8 @@ VARIANTS = {
     "cc-wind": ["physics", "wind"],
     "cc-wind-memory": ["physics", "wind", "memory"],
     "cc-wind-memory-turned": ["physics", "wind", "memory", "memory-turned"],
+    "cc-wind-turned": ["physics", "wind", "wind-turned"],
+    "cc-nearby-sensor": ["physics", "wind", "nearby"],
     "cc-sea-level": ["physics", "wind", "level", "level-north", "level-change", "level-change-north"],
     "cc-all": ["physics", "wind", "memory", "level", "level-north", "level-change", "level-change-north"],
 }

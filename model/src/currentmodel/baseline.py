@@ -223,3 +223,62 @@ def _is_number(text: str) -> bool:
     except ValueError:
         return False
     return True
+
+
+NOAA_PREDICTIONS = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter"
+
+
+def parse_noaa_current_predictions(text: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Times (epoch s, UTC) and east and north velocity (m/s) from a CO-OPS ``currents_predictions`` reply.
+
+    The reply gives the speed along the station's flood/ebb axis in knots,
+    positive on the flood (``Velocity_Major``), with the mean flood and ebb
+    directions (degrees true, towards).
+    """
+    import json
+
+    rows = json.loads(text).get("current_predictions", {}).get("cp", [])
+    if not rows:
+        raise ValueError("no current predictions in the reply")
+    t = np.array([_parse_time(r["Time"].replace(" ", "T") + "+00:00") for r in rows])
+    major = np.array([float(r["Velocity_Major"]) for r in rows]) * KNOT_MS
+    flood = np.array([float(r["meanFloodDir"]) for r in rows])
+    ebb = np.array([float(r["meanEbbDir"]) for r in rows])
+    toward = np.where(major >= 0, flood, ebb)
+    u, v = uv_from_speed_dir(np.abs(major), toward)
+    return t, u, v
+
+
+def load_noaa_current_predictions(stations: dict[str, tuple[float, float]], start: float, end: float, fetch=None, **kwargs) -> TidalStreamField:
+    """NOAA's official tidal current predictions at US stations, as one field.
+
+    ``stations`` maps CO-OPS prediction station ids (``MIH0901``, Miami
+    Harbor Entrance) to their (lat, lon). Predictions every 30 minutes at
+    each station's default depth, tide only. The service gives at most 31
+    days a request, so longer periods are read in pieces. ``fetch(url)``
+    returns the reply's bytes (default: a plain download).
+    """
+    import urllib.parse
+    import urllib.request
+
+    if fetch is None:
+        fetch = lambda url: urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "currentmodel"}), timeout=90).read()
+    day = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).strftime("%Y%m%d")
+    series = []
+    for sid in stations:
+        parts = []
+        for a in np.arange(start, end, 30 * 86400.0):
+            b = min(end, a + 30 * 86400.0)
+            query = {"product": "currents_predictions", "station": sid, "begin_date": day(a), "end_date": day(b), "time_zone": "gmt",
+                     "units": "english", "format": "json", "interval": "30", "vel_type": "default", "application": "currentmodel"}
+            parts.append(parse_noaa_current_predictions(fetch(NOAA_PREDICTIONS + "?" + urllib.parse.urlencode(query)).decode()))
+        t = np.concatenate([p[0] for p in parts])
+        t, first = np.unique(t, return_index=True)
+        series.append((t, np.concatenate([p[1] for p in parts])[first], np.concatenate([p[2] for p in parts])[first]))
+    times = series[0][0]
+    for t, _, _ in series[1:]:
+        times = np.intersect1d(times, t)
+    u = np.column_stack([np.interp(times, t, uu) for t, uu, _ in series])
+    v = np.column_stack([np.interp(times, t, vv) for t, _, vv in series])
+    latlon = np.array(list(stations.values()), dtype=float)
+    return TidalStreamField(latlon[:, 0], latlon[:, 1], times, u, v, **kwargs)
