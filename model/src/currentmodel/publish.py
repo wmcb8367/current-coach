@@ -256,17 +256,22 @@ def unpack(data: bytes):
     return values[:, 0], values[:, 1]
 
 
-def water_mask(grid: MapGrid, detail: int = MASK_DETAIL, cache_dir: str | Path | None = None) -> np.ndarray:
+def water_mask(grid: MapGrid, detail: int = MASK_DETAIL, cache_dir: str | Path | None = None, charted=None) -> np.ndarray:
     """Where the sea is, ``detail`` times finer than the map: True for water, row 0 the southernmost.
 
     From the same elevation tiles that give the physics model its coast
-    (about 30 m at their finest), so the two agree.
+    (about 30 m at their finest), so the two agree; where ``charted(lat, lon)``
+    (a chart depth source's ``water``) knows better, from the charts.
     """
     lats = np.linspace(grid.south, grid.north, (grid.rows - 1) * detail + 1)
     lons = np.linspace(grid.west, grid.east, (grid.cols - 1) * detail + 1)
     lat, lon = np.meshgrid(lats, lons, indexing="ij")
     # The same threshold as the physics grid: water reads zero in these tiles, give or take specks of noise.
-    return np.asarray(elevation(lat, lon, 12, cache_dir)) <= LAND_ABOVE_M
+    water = np.asarray(elevation(lat, lon, 12, cache_dir)) <= LAND_ABOVE_M
+    if charted is not None:
+        verdict = np.asarray(charted(lat, lon), dtype=float)
+        water = np.where(np.isnan(verdict), water, verdict > 0.5)
+    return water
 
 
 def shore_for(grid: MapGrid, water: np.ndarray, detail: int = MASK_DETAIL) -> Shore:
@@ -499,6 +504,7 @@ def run(
     time_zone: str | None = None,
     cache_dir: str | Path | None = None,
     log: Callable[[str], None] | None = None,
+    charted_water: Callable | None = None,
     **build_options,
 ) -> dict:
     """Build and publish a venue.
@@ -517,7 +523,7 @@ def run(
     mask = shore = None
     try:
         log("drawing the coastline")
-        coast = water_mask(grid, MASK_DETAIL, Path(cache_dir) / "tiles" if cache_dir else None)
+        coast = water_mask(grid, MASK_DETAIL, Path(cache_dir) / "tiles" if cache_dir else None, charted_water)
         mask, shore = pack_mask(coast, MASK_DETAIL), shore_for(grid, coast)
     except Exception as problem:  # the map still works without it, with a coarser shore
         log(f"  coastline not available ({problem})")
@@ -546,6 +552,42 @@ def run(
     return publish(target, venue, manifest_for(venue, grid, files, kinds, issued, mask), files, log)
 
 
+NOAA_CHARTS = "https://charts.noaa.gov/ENCs/{cell}.zip"
+
+
+def fetch_noaa_charts(cells: Sequence[str], folder: Path, log: Callable[[str], None] | None = None) -> list[Path]:
+    """Download free NOAA chart cells (US ENC, public domain) into ``folder``, keeping copies already there."""
+    import urllib.request
+
+    log = log or (lambda message: None)
+    folder.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for cell in cells:
+        path = folder / f"{cell}.zip"
+        if not path.exists():
+            log(f"fetching chart {cell}")
+            request = urllib.request.Request(NOAA_CHARTS.format(cell=cell), headers={"User-Agent": "currentmodel"})
+            path.write_bytes(urllib.request.urlopen(request, timeout=300).read())
+        paths.append(path)
+    return paths
+
+
+def depth_refiner(base, charts: Sequence[Path], datum_m: float, max_depth_m: float | None, cell_m: float, log=None):
+    """GEBCO with charts laid over it, capped at ``max_depth_m``; the charts' coastline is kept."""
+    from .build import better_depths
+
+    source = better_depths(base, charts, datum_m, cell_m=cell_m, log=log) if charts else base
+    if source is None or max_depth_m is None:
+        return source
+
+    def capped(lat, lon):
+        return np.minimum(np.asarray(source(lat, lon), dtype=float), max_depth_m)
+
+    if hasattr(source, "water"):
+        capped.water = source.water
+    return capped
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Build a venue's current models and publish them as maps for the app.")
     parser.add_argument("--venue", required=True, help="short id, lower case letters, digits and dashes (hong-kong)")
@@ -561,6 +603,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out", default=None, help="folder to publish into")
     parser.add_argument("--server", default=None, help="server to publish to; its token is read from CURRENT_MODELS_UPLOAD_TOKEN")
     parser.add_argument("--cache", default=None, help="folder to keep downloaded data in")
+    parser.add_argument("--charts", default=None,
+                        help="free NOAA chart cells to lay over GEBCO's depths, comma separated (US5MIACC,...); fetched from charts.noaa.gov")
+    parser.add_argument("--chart-datum", type=float, default=0.0, help="how far mean sea level is above the charts' datum, in metres")
+    parser.add_argument("--max-depth", type=float, default=None,
+                        help="cap the model's depths here (m): water deeper than this hardly matters to the venue and slows the run")
     args = parser.parse_args(argv)
 
     if bool(args.out) == bool(args.server):
@@ -573,9 +620,18 @@ def main(argv: list[str] | None = None) -> None:
     else:
         target = Folder(args.out)
     days = [day.strip() for day in args.days.split(",") if day.strip()] if args.days else None
+    extra = {}
+    cells = [c.strip() for c in args.charts.split(",") if c.strip()] if args.charts else []
+    if cells or args.max_depth:
+        paths = fetch_noaa_charts(cells, Path(args.cache or ".") / "charts", log=print) if cells else []
+        if paths:
+            from .charts import chart_depth_source, read_charts
+
+            extra["charted_water"] = chart_depth_source(read_charts(paths), None, args.chart_datum, cell_m=min(args.dx, 50.0)).water
+        extra["refine_depths"] = lambda base: depth_refiner(base, paths, args.chart_datum, args.max_depth, min(args.dx, 50.0), print)
     manifest = run(
         target, args.venue, args.name, args.lat, args.lon, args.width_km * 1000.0, args.height_km * 1000.0,
-        days=days, step_m=args.step_m, time_zone=args.time_zone, cache_dir=args.cache, dx=args.dx, log=print,
+        days=days, step_m=args.step_m, time_zone=args.time_zone, cache_dir=args.cache, dx=args.dx, log=print, **extra,
     )
     count = sum(len(model["days"]) for model in manifest["models"])
     print(f"published {args.venue}: {len(manifest['models'])} models, {count} day files in the manifest")

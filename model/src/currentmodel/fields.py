@@ -65,12 +65,15 @@ class GriddedField:
     """Currents on a grid at a sequence of times.
 
     ``u`` and ``v`` have shape (times, rows, columns) in m/s, NaN on land.
+    ``eta``, when kept, is the water level above mean sea level in metres,
+    the same shape: what a tide gauge in the venue would read.
     """
 
     grid: Grid
     times: np.ndarray
     u: np.ndarray
     v: np.ndarray
+    eta: np.ndarray | None = None
 
     def __post_init__(self) -> None:
         self.times = np.asarray(self.times, dtype=float)
@@ -101,6 +104,21 @@ class GriddedField:
             at1 = np.nansum(field[step + 1, rows, cols] * weights, axis=0)
             out.append(np.where(found, (1 - frac) * at0 + frac * at1, np.nan).reshape(shape))
         return out[0], out[1]
+
+    def level(self, lat, lon, time):
+        """Water level above mean sea level (m) at each position and time; NaN on land, outside the run, or if not kept."""
+        lat, lon, time = np.broadcast_arrays(*(np.asarray(a, dtype=float) for a in (lat, lon, time)))
+        shape = lat.shape
+        if self.eta is None:
+            return np.full(shape, np.nan)
+        lat, lon, time = lat.ravel(), lon.ravel(), time.ravel()
+        rows, cols, weights, found = _corners(self.grid, self._valid, lat, lon)
+        found &= (time >= self.times[0]) & (time <= self.times[-1])
+        step = np.clip(np.searchsorted(self.times, time, side="right") - 1, 0, self.times.size - 2)
+        frac = np.clip((time - self.times[step]) / (self.times[step + 1] - self.times[step]), 0.0, 1.0)
+        at0 = np.nansum(self.eta[step, rows, cols] * weights, axis=0)
+        at1 = np.nansum(self.eta[step + 1, rows, cols] * weights, axis=0)
+        return np.where(found, (1 - frac) * at0 + frac * at1, np.nan).reshape(shape)
 
     def rate(self, lat, lon, time, half_window_s: float = 900.0):
         """Time derivative of the velocity in m/s per second."""
@@ -164,7 +182,7 @@ def simulate(
     solver.start(start - spinup_s, ramp_s=0.5 * spinup_s)
     solver.run(start)
 
-    times, us, vs = [], [], []
+    times, us, vs, etas = [], [], [], []
     steps = int(np.floor((end - start) / sample_s + 1e-9))
     for k in range(steps + 1):
         # Frames carry their nominal time; the solver is within one time step (seconds) of it.
@@ -174,9 +192,10 @@ def simulate(
         times.append(nominal)
         us.append(u.astype("f4"))
         vs.append(v.astype("f4"))
+        etas.append(np.where(grid.wet, solver.eta, np.nan).astype("f4"))
         if progress is not None:
             progress(k / max(steps, 1))
-    return GriddedField(grid, np.array(times), np.array(us), np.array(vs))
+    return GriddedField(grid, np.array(times), np.array(us), np.array(vs), np.array(etas))
 
 
 def edge_flow(
