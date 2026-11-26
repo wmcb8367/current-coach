@@ -20,6 +20,10 @@ The models published:
 ``tide``        the venue physics model with the tide only
 ``global``      NOAA's global ocean model as published
 ``wind``        the wind-following share alone, the same everywhere
+``wind-memory`` Current Coach's return-flow model: physics plus the wind
+                share, plus water flowing back after days of wind ease
+                (:class:`~currentmodel.variants.WindMemory`), with the
+                weights the Hong Kong readings gave
 
 File format (little-endian), one file per model and UTC day::
 
@@ -81,7 +85,8 @@ import numpy as np
 from .build import SPINUP_S, build_suite
 from .correction import Conditions
 from .dayahead import WIND_AVERAGE_S, WIND_FRACTION, WIND_SOURCES, assemble
-from .models import WindDrift
+from .models import Blend, WindDrift
+from .variants import WindMemory
 from .shore import Shore
 from .venue import elevation
 from .wind import forecast_wind
@@ -147,7 +152,17 @@ MODELS = (
         "Two percent of the forecast wind, the same everywhere. The simplest model that follows the wind.",
         ("forecast wind",),
     ),
+    ModelInfo(
+        "wind-memory",
+        "Physics + wind + return flow",
+        "Physics + wind, plus the water that flows back when days of wind ease, as the readings showed after the late-November northerlies.",
+        ("tide", "coastline and depths", "weather-driven sea level", "coastal drift", "forecast wind", "wind of the last 3 days"),
+    ),
 )
+
+# Weights of the wind-memory model, fitted to 96 readings east of Clearwater Bay (15 to 26 Nov 2026).
+MEMORY_WEIGHTS = {"physics": 1.06, "wind": 0.015, "memory": -0.033}
+MEMORY_S = 72 * HOUR_S
 DEFAULT_MODEL = "day-ahead"
 
 
@@ -355,6 +370,11 @@ def models_for(suite, wind: Conditions, lat: float, lon: float) -> dict:
         "tide": suite["venue-tide"],
         "global": suite["global"],
         "wind": WindDrift(wind, lat, lon, WIND_FRACTION, average_s=WIND_AVERAGE_S),
+        "wind-memory": Blend(
+            [suite["venue-weather"], WindDrift(wind, lat, lon, 1.0, average_s=WIND_AVERAGE_S), WindMemory(wind, lat, lon, memory_s=MEMORY_S)],
+            [MEMORY_WEIGHTS["physics"], MEMORY_WEIGHTS["wind"], MEMORY_WEIGHTS["memory"]],
+            ["physics", "wind", "memory"],
+        ),
     }
 
 
@@ -393,7 +413,7 @@ def build_days(
     start = day_start(days[0]) - LEAD_IN_S
     end = day_start(days[-1]) + DAY_S
     log(f"reading the wind forecast ({', '.join(wind_sources)})")
-    first = start - SPINUP_S - WIND_AVERAGE_S
+    first = start - SPINUP_S - max(WIND_AVERAGE_S, MEMORY_S)
     try:
         wind = forecast_wind(lat, lon, first, end, tuple(wind_sources), cache / "wind" if cache else None, issued_before, log)
     except FileNotFoundError:

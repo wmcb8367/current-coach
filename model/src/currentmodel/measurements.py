@@ -142,9 +142,10 @@ _CSV_COLUMNS = {
     "id": ("id", "client_id", "clientid"),
     "time": ("time_utc", "utc", "measured_at_utc", "timestamp", "time", "time_hong_kong", "time_hkt", "time_local"),
     "speed_kn": ("speed_knots", "current_kt", "current_kn", "current_knots", "speed_kt", "speed_kn"),
+    "speed_ms": ("speed m/s", "speed_ms", "speed_m_s", "speed_mps"),
     "from_deg": (
         "flow_from_degrees", "current_from_deg", "direction_from_deg", "direction_from_degrees",
-        "from_true_deg", "from_direction_degrees", "from_deg",
+        "from_true_deg", "from_direction_degrees", "from_deg", "from",
     ),
     "to_deg": (
         "set_toward_degrees", "direction_toward_deg", "direction_toward_degrees", "toward_true_deg",
@@ -152,7 +153,8 @@ _CSV_COLUMNS = {
     ),
     "lat": ("latitude", "lat"),
     "lon": ("longitude", "lon", "lng"),
-    "duration": ("duration_seconds", "duration_s"),
+    "duration": ("duration_seconds", "duration_s", "measurementtime"),
+    "accuracy_m": ("tidetoolacc", "gps_accuracy_m", "accuracy_m"),
     "valid": ("is_valid", "valid"),
     "confidence": ("confidence_percent", "confidence"),
     "wind_from": ("wind_from_deg", "wind_from_degrees", "twd"),
@@ -189,10 +191,12 @@ def load_readings_csv(
     """Load current readings from a spreadsheet saved as CSV.
 
     For readings kept outside the app, or exported from it as a table. The
-    columns are found by name: a time, a speed in knots, the direction the
-    current comes *from* or sets *towards*, latitude and longitude, and
-    optionally duration, validity, confidence and the wind noted at the time
-    (from direction and knots). Rows without a position or a current are
+    columns are found by name: a time, a speed in knots (or in m/s, as the
+    app's raw export gives it), the direction the current comes *from* or
+    sets *towards*, latitude and longitude, and optionally duration,
+    validity, confidence, the GPS accuracy in metres (which sets the
+    reading's error estimate, so a reading with a poor fix counts for less)
+    and the wind noted at the time (from direction and knots). Rows without a position or a current are
     skipped, as are rows marked invalid.
 
     ``date`` (``YYYY-MM-DD``) and ``utc_offset_hours`` are needed when the
@@ -207,6 +211,10 @@ def load_readings_csv(
         return []
     header = {name.strip().lower(): name for name in rows[0]}
     column = {key: next((header[n] for n in names if n in header), None) for key, names in _CSV_COLUMNS.items()}
+    if column["speed_kn"] is None and column["speed_ms"] is not None:
+        column["speed_kn"], knots_per_unit = column["speed_ms"], 1.0 / KNOT_MS
+    else:
+        knots_per_unit = 1.0
     for needed in ("time", "speed_kn", "lat", "lon"):
         if column[needed] is None:
             raise ValueError(f"no {needed} column in {path}; expected one of {_CSV_COLUMNS[needed]}")
@@ -225,8 +233,9 @@ def load_readings_csv(
         if None in (speed, lat, lon, direction) or (cell(row, "valid") or "true").lower() in ("false", "0", "no"):
             continue
         dir_to = (float(direction) + 180.0) % 360.0 if cell(row, "from_deg") else float(direction) % 360.0
-        u, v = uv_from_speed_dir(float(speed) * KNOT_MS, dir_to)
+        u, v = uv_from_speed_dir(float(speed) * knots_per_unit * KNOT_MS, dir_to)
         duration = float(cell(row, "duration") or 0.0)
+        accuracy = float(cell(row, "accuracy_m")) if cell(row, "accuracy_m") else DEFAULT_GPS_SIGMA_M
         half = 0.5 * duration
         lat0, lon0 = float(lat), float(lon)
         wind_u = wind_v = None
@@ -236,6 +245,8 @@ def load_readings_csv(
         extra = {"row": number}
         if cell(row, "confidence"):
             extra["confidence"] = float(cell(row, "confidence"))
+        if cell(row, "accuracy_m"):
+            extra["accuracy_m"] = accuracy
         drifts.append(
             Drift(
                 id=cell(row, "id") or f"{stem}:{number}",
@@ -245,7 +256,7 @@ def load_readings_csv(
                 lon=float(lon0 + np.degrees(float(u) * half / (EARTH_RADIUS_M * np.cos(np.radians(lat0))))),
                 u=float(u),
                 v=float(v),
-                sigma=drift_sigma(duration or default_duration_s),
+                sigma=drift_sigma(duration or default_duration_s, accuracy),
                 duration_s=duration or default_duration_s,
                 wind_u=wind_u,
                 wind_v=wind_v,

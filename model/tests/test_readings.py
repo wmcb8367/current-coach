@@ -77,3 +77,18 @@ def test_the_same_reading_in_two_exports_is_kept_once(tmp_path):
     drifts = load_readings_csv(first, user="a") + load_readings_csv(second, user="a")
     assert [d.id for d in drifts[:2]] == ["abc1", "abc2"]
     assert len(drifts) == 3 and len(drop_repeats(drifts)) == 2
+
+
+def test_raw_app_export_in_metres_per_second_with_gps_accuracy(tmp_path):
+    path = tmp_path / "raw.csv"
+    path.write_text(
+        "timeStamp,latitude,longitude,speed m/s,measurementTime,from,distance,tidetoolacc\n"
+        "2026-11-26T08:09:14.999Z,22.27215892,114.33036731,0.09,241.0,177.1,22.5,2.2\n"
+        "2026-11-26T07:29:09.000Z,22.29574657,114.33375121,0.07,405.0,225.1,28.3,30.7\n"
+    )
+    good, poor = load_readings_csv(path, user="coach")
+    assert good.speed == pytest.approx(0.09, abs=1e-6)
+    assert good.duration_s == 241.0
+    assert good.v > 0  # from 177 degrees: the water sets north
+    assert poor.extra["accuracy_m"] == 30.7
+    assert poor.sigma > 3 * good.sigma

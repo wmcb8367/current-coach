@@ -162,9 +162,12 @@ python -m currentmodel.publish --venue hong-kong --name "Hong Kong" \
 CURRENT_MODELS_UPLOAD_TOKEN=... python -m currentmodel.publish ... --server https://example.com
 ```
 
-Five models are published: `day-ahead` (physics run on the forecasts plus the
+Six models are published: `day-ahead` (physics run on the forecasts plus the
 wind-following surface layer; the default), `physics`, `tide`, `global`
-(NOAA's model as published) and `wind` (2% of the forecast wind alone). The
+(NOAA's model as published), `wind` (2% of the forecast wind alone) and
+`wind-memory` (Current Coach's `cc-wind-memory`: day-ahead plus the water
+that flows back after days of wind ease, weights from the Hong Kong
+readings; see the fourth round below). The
 simple ones are there on purpose: a model has earned its place only if it
 beats them against readings.
 
@@ -210,6 +213,101 @@ model (`wind.py`). These have been built for Hong Kong and for Biscayne Bay.
 
 Still simulated: the tests of the correction, the scoring and the blend,
 which use a venue (`synthetic.py`) whose answer is known.
+
+### Fourth round: sensors around the venue, and the Current Coach variants
+
+The aim is a three-tier model: the physics model on the best depths (tier
+1); every open sensor around the venue, searched for what explains the
+physics model's misses (tier 2); and each user's readings tuning their own
+copy on the day (tier 3, `live.py`). This round built tier 2 and a set of
+named variants, each carrying one idea, to be scored side by side.
+
+**Finding the sensors (`sensors.py`).** `discover(lat, lon)` asks every
+catalogue which of its stations lie within reach and writes a manifest;
+`collect(manifest, start, end)` reads them all onto one hourly table. It is
+the same step for any venue:
+
+```
+python -m currentmodel.sensors --lat 22.28 --lon 114.33 --out hong-kong-sensors.json --cache cache
+```
+
+Catalogues: weather stations worldwide (NCEI GHCNh: wind, pressure, rain),
+tide gauges worldwide (UHSLC hourly for decades, IOC near real time), NOAA
+CO-OPS tide gauges and current meters (US), NDBC buoys, river discharge
+from GloFAS (the largest rivers within reach, found by probing a grid),
+and for Hong Kong the Observatory's and Marine Department's gauges and the
+Observatory's daily rain. Feeds that give only their latest value grow a
+history with `record_latest`, run on a schedule. Around the Hong Kong race
+area it found 48 sensors: 19 tide gauges (3 with history), 24 weather
+stations (only Waglan Island reports wind and pressure through this
+archive), 4 rivers including the Pearl River (mean 7,100 m3/s), and no
+current meter: no fixed current meter in Hong Kong publishes open data.
+
+**Tide gauges as a long target (`tides.py`).** A gauge's level minus its
+own fitted tide is the residual: what wind, pressure and rivers did to the
+sea. At Quarry Bay it is 13 cm (standard deviation, Jan 2025 to Nov 2026),
+mostly slow (11 cm in the daily mean). It is 16,000 hours of target where
+the drifts are 96 readings.
+
+**Screening drivers (`drivers.py`).** Every sensor becomes candidate
+drivers (its mean over 6 hours to 7 days, its change, lagged 0 to 72
+hours), each tested alone on held-out weeks or days, with a permutation
+test that shuffles whole days and Benjamini-Hochberg q-values over all
+candidates.
+
+- Quarry Bay residual a day ahead (2,734 times, 99 weeks): yesterday's
+  level alone takes the error from 13.0 to 9.5 cm. On top of it, what the
+  wind did (north-south wind over the last one to two days and how it has
+  changed) brings 9.0 cm with what is known the evening before and 7.8 cm
+  with the day's wind known (a perfect forecast). Rain and river discharge
+  added nothing measurable. The wind's history and its easing move the sea,
+  which is the mechanism behind the pile-up idea.
+- What physics plus wind miss in the 96 readings (304 candidates, 8 days):
+  the best candidates are again changes in wind over one to four days and
+  the slope between Shek Pik and Quarry Bay, each cutting the error by
+  about 12%, but none survives the correction for testing so many
+  (q 0.57). Eight days cannot single out a driver among hundreds.
+
+**The variants (`variants.py`).** Scored on 96 readings, 15 to 26 Nov 2026.
+Day ahead: each day predicted with weights learned on the other days only.
+Live: tuned reading by reading.
+
+| Variant | Ideas | Day ahead | Live |
+| --- | --- | --- | --- |
+| no current | | 0.346 kn | |
+| `cc-physics` | physics model | 0.265 kn | 0.177 kn |
+| `cc-wind` | + surface water following the wind of the last 6 h | 0.228 kn | 0.165 kn |
+| `cc-wind-memory` | + return flow after a blow eases | **0.219 kn** | **0.162 kn** |
+| `cc-wind-memory-turned` | + that return turned by the Earth's rotation | 0.226 kn | 0.163 kn |
+| `cc-sea-level` | + tide gauge surplus and its change | 0.313 kn | 0.177 kn |
+| `cc-all` | all of the above | 0.290 kn | 0.176 kn |
+
+- The wind memory term is the mean wind of the last three days, scaled by
+  how far the wind has since eased. Its fitted weight is negative with any
+  one day left out (-0.011 to -0.045; leaving out 26 Nov weakens it most,
+  so that day carries much of the evidence): after a blow, the water comes back against the old wind,
+  at about 3% of the old wind's speed once it has fully eased. On 26 Nov
+  (light wind after a week of 15 to 23 kn north-easterlies) the readings
+  ran 0.20 kn toward 66 degrees, against the light wind; it cut that day's
+  error from 0.29 to 0.26 kn, and 21 Nov's from 0.22 to 0.18. It made 18
+  Nov worse (0.19 to 0.29), a day that followed only a light easterly.
+  Resampling whole days, it beats `cc-wind` in 81% of cases: likely, not
+  yet established. Two forms were tried (the plain difference of old and
+  recent wind scored 0.254) and three memories (48, 72, 96 h); the best is
+  kept, so the 0.219 is slightly flattering.
+- The tide gauge terms make the day-ahead prediction worse: six more
+  weights than eight days can pin down.
+- Physics plus 1.5% of the six-hour wind with nothing fitted scores 0.205
+  kn on all 96 readings (0.19 on the first 81); 26 Nov is the hardest day
+  so far (0.29).
+
+What this data can and cannot support: 96 readings on 8 days, all near the
+middle of the day in one 7 by 5 km area. Each day is close to one sample of
+the weather, so the honest sample size is 8. That is enough to rank a model
+with one extra weight and not enough to choose among hundreds of sensor
+signals; the long gauge record carries that search until there are more
+days of readings. Each new day of readings is worth more than more
+readings on the same day, and days after a change of wind are worth most.
 
 ### Third round: one day ahead
 
