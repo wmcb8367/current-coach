@@ -18,8 +18,10 @@ From a position and a box size this fetches open data and returns a
     venue is added from NOAA's weather model, and rivers if given.
 
 Depths come from GEBCO where it can be reached (see
-:mod:`currentmodel.depths`), otherwise from the global terrain tiles. The
-open edges take both the level and the current of the global model.
+:mod:`currentmodel.depths`), otherwise from the global terrain tiles.
+Electronic charts and the depth logs of a team's own boats, where there are
+any, are laid over that (:func:`better_depths`). The open edges take both
+the level and the current of the global model.
 
 Official national predictions, where a country publishes them, are loaded
 separately (see :mod:`currentmodel.baseline`) and added to the suite with
@@ -30,6 +32,10 @@ model is right for the venue, and ``fit`` to correct it.
 Command line::
 
     python -m currentmodel.build --lat 22.27 --lon 114.17 --width-km 44 --height-km 34 --out hong-kong
+
+With the boats' own soundings, reduced with the predicted tide at Tai Miu Wan::
+
+    python -m currentmodel.build ... --depth-logs logs/*.sl2 --tide-station TMW --transducer 0.4
 """
 
 from __future__ import annotations
@@ -50,11 +56,57 @@ from .fields import GriddedField, edge_flow, simulate
 from .geo import KNOT_MS
 from .models import LUNAR_DAY_S, ModelSuite
 from .physics import Grid
+from .sonarlog import read_sonar_log
+from .soundings import Soundings, depth_source_from_soundings, hk_predicted_tide, reduce_to_mean_sea_level
 from .venue import build_grid
 from .wind import forecast_wind, gfs_wind
 
 SPINUP_S = 12 * 3600.0
 MARGIN_M = 15_000.0
+
+
+def better_depths(
+    base: Callable | None,
+    charts: Iterable[str | Path] = (),
+    mean_sea_level_above_datum_m: float = 0.0,
+    depth_logs: Iterable[str | Path] = (),
+    level: Callable | None = None,
+    transducer_m: float = 0.0,
+    cell_m: float = 50.0,
+    reach_m: float = 1000.0,
+    log: Callable[[str], None] | None = None,
+) -> Callable | None:
+    """``base`` with charts laid over it, and the boats' own soundings over those.
+
+    ``charts`` are electronic chart files, folders or zips
+    (:mod:`currentmodel.charts`) and ``mean_sea_level_above_datum_m`` how far
+    mean sea level is above their datum. ``depth_logs`` are files a sounder
+    or plotter recorded (:mod:`currentmodel.sonarlog`). ``level(time)`` is
+    the water level above mean sea level when they were recorded and
+    ``transducer_m`` the depth of the transducer below the waterline; without
+    ``level`` the logs are taken as depths below mean sea level already.
+    """
+    log = log or (lambda message: None)
+    source = base
+    charts = list(charts)
+    if charts:
+        from .charts import chart_depth_source, read_charts
+
+        cells = read_charts(charts)
+        log(f"depths from {len(cells)} chart cells: " + ", ".join(f"{c.name} 1:{c.scale:,}" for c in cells))
+        source = chart_depth_source(cells, source, mean_sea_level_above_datum_m, cell_m=cell_m, reach_m=reach_m)
+    logs = [read_sonar_log(path) for path in depth_logs]
+    if logs:
+        soundings = Soundings.join(logs)
+        if level is not None:
+            raw = len(soundings)
+            soundings = reduce_to_mean_sea_level(soundings, level, transducer_m)
+            if len(soundings) < raw:
+                log(f"  {raw - len(soundings)} soundings left out: no time, or outside the tide series")
+        log(f"depths from {len(soundings)} soundings in {len(logs)} logs")
+        if len(soundings):
+            source = depth_source_from_soundings(soundings, source, cell_m=cell_m, reach_m=reach_m)
+    return source
 
 
 def build_suite(
@@ -69,6 +121,7 @@ def build_suite(
     wind: Conditions | str | None = "gfs",
     rivers: Iterable[tuple[float, float, float]] = (),
     depth_source: Callable | str | None = "gebco",
+    refine_depths: Callable[[Callable | None], Callable | None] | None = None,
     models: Iterable[str] = ("global", "venue-tide", "venue-weather"),
     log: Callable[[str], None] | None = None,
     edge_currents: bool = True,
@@ -84,7 +137,9 @@ def build_suite(
     ``depth_source`` is ``"gebco"`` (the default: GEBCO's grid, falling back
     to the terrain tiles if it cannot be reached), ``None`` for the tiles
     alone, or a function giving better depths as in
-    :func:`~currentmodel.venue.build_grid`. ``wind`` drives ``venue-weather``
+    :func:`~currentmodel.venue.build_grid`. ``refine_depths`` is handed
+    whichever of those was used and returns a better one: the place for
+    charts and the boats' own soundings (:func:`better_depths`). ``wind`` drives ``venue-weather``
     inside the venue: ``"gfs"`` fetches NOAA's weather model at the centre,
     ``"forecast"`` the mean of several weather models
     (:func:`~currentmodel.wind.forecast_wind`, steadier for the days ahead),
@@ -114,6 +169,8 @@ def build_suite(
         except Exception as problem:  # no network, or the service is down: the tiles still give a grid
             log(f"  GEBCO not available ({problem}); using the terrain tiles' depths")
             depth_source = None
+    if refine_depths is not None:
+        depth_source = refine_depths(depth_source)
     log("building the venue grid")
     grid = build_grid(lat, lon, width_m, height_m, dx=dx, depth_source=depth_source, cache_dir=cache / "tiles" if cache else None)
 
@@ -208,6 +265,24 @@ def _parse_time(text: str) -> float:
     return (stamp if stamp.tzinfo else stamp.replace(tzinfo=dt.timezone.utc)).timestamp()
 
 
+def _hk_tide(station: str, depth_logs: Iterable[str | Path]) -> Callable:
+    """The predicted tide at a Hong Kong station for every year the logs cover."""
+    times = Soundings.join(read_sonar_log(path) for path in depth_logs).time
+    times = times[~np.isnan(times)]
+    if times.size == 0:
+        raise SystemExit("the depth logs carry no times, so the tide cannot be taken out of them")
+    years = sorted({dt.datetime.fromtimestamp(t, dt.timezone.utc).year for t in (times.min() - 86400.0, times.max() + 86400.0)})
+    tables = [hk_predicted_tide(year, station) for year in range(years[0], years[-1] + 1)]
+
+    def level(at) -> np.ndarray:
+        found = np.full(np.shape(at), np.nan)
+        for table in tables:
+            found = np.where(np.isnan(found), table(at), found)
+        return found
+
+    return level
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Build the current models for a venue anywhere in the world.")
     parser.add_argument("--lat", type=float, required=True)
@@ -220,6 +295,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out", required=True, help="folder for the results")
     parser.add_argument("--cache", default=None, help="folder to keep downloaded data in")
     parser.add_argument("--depths", choices=("gebco", "tiles"), default="gebco", help="where water depths come from")
+    parser.add_argument("--charts", nargs="*", default=[], help="electronic chart cells (.000), folders or zips of them, laid over those depths")
+    parser.add_argument("--chart-datum", type=float, default=0.0, help="how far mean sea level is above the charts' datum, in metres")
+    parser.add_argument("--depth-logs", nargs="*", default=[], help="depth logs from the boats' own sounders (.sl2 .sl3 .gpx .csv .nmea)")
+    parser.add_argument("--tide-station", default=None, help="Hong Kong Observatory tide station (TMW, QUB ...) to take the tide out of the logs with")
+    parser.add_argument("--transducer", type=float, default=0.0, help="depth of the sounder's transducer below the waterline, in metres")
     parser.add_argument("--no-wind", action="store_true", help="leave the wind out of venue-weather")
     args = parser.parse_args(argv)
 
@@ -230,6 +310,15 @@ def main(argv: list[str] | None = None) -> None:
     end = start + args.hours * 3600.0
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    say = lambda m: print(m, flush=True)
+    refine = None
+    if args.charts or args.depth_logs:
+        level = None
+        if args.depth_logs and args.tide_station:
+            level = _hk_tide(args.tide_station, args.depth_logs)
+        elif args.depth_logs:
+            say("no --tide-station: taking the depth logs as depths below mean sea level already")
+        refine = lambda base: better_depths(base, args.charts, args.chart_datum, args.depth_logs, level, args.transducer, cell_m=min(args.dx, 50.0), log=say)
     suite, grid = build_suite(
         args.lat,
         args.lon,
@@ -240,8 +329,9 @@ def main(argv: list[str] | None = None) -> None:
         dx=args.dx,
         cache_dir=args.cache,
         depth_source="gebco" if args.depths == "gebco" else None,
+        refine_depths=refine,
         wind=None if args.no_wind else "gfs",
-        log=lambda m: print(m, flush=True),
+        log=say,
     )
     for entry in suite.entries:
         if isinstance(entry.model, GriddedField):
