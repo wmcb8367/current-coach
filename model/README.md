@@ -262,6 +262,52 @@ model (`wind.py`). These have been built for Hong Kong and for Biscayne Bay.
 Still simulated: the tests of the correction, the scoring and the blend,
 which use a venue (`synthetic.py`) whose answer is known.
 
+### Better depths for Hong Kong: a 1960 Admiralty chart
+
+GEBCO is three quarters satellite-gravity guesses around Hong Kong and two
+thirds in the race area. A third search for free depth data (27 Nov 2026)
+found one source with real surveys behind it: British Admiralty chart 937,
+*Eastern Approaches to Hong Kong*, 1:50,000, 1960 (corrected to 1962),
+scanned at high resolution by the National Library of Australia and out of
+Crown copyright. 456 of its soundings, read by eye, are in
+`data/hong-kong/admiralty-937-soundings.csv` (sources, georeference and use
+in `data/hong-kong/README.md`). On the chart the race area is 23 m deep
+(median, below mean sea level) where GEBCO has 20 m, and single places
+differ by 5 m either way.
+
+What else was checked and is not usable:
+
+- Copernicus Marine's global coastal satellite depths (Sentinel-2, 100 m,
+  December 2025, free): around Hong Kong it reads about 23 to 24 m whatever
+  the real depth. Where GEBCO rests on real soundings of 10 to 20, 20 to 30
+  and over 30 m it gives a median 23, 24 and 24 m (correlation 0.28).
+- Newer global grids (SYSU_Topo, SDUST2023BCO) are satellite gravity at one
+  arc-minute, coarser than GEBCO; HHU24SWDSCS covers South China Sea reefs
+  only; the Pearl River Estuary datasets on Zenodo hold no Hong Kong depths.
+
+Scored with the same physics run (11.5 days from 15 Nov, 200 m cells, GFS
+wind), GEBCO against GEBCO plus the chart:
+
+| | GEBCO | with chart 937 |
+| --- | --- | --- |
+| `cc-physics`, day ahead / live (97 readings) | 0.294 / 0.220 kn | 0.295 / 0.220 kn |
+| `cc-wind`, day ahead / live | 0.259 / 0.212 kn | 0.259 / 0.214 kn |
+| `cc-wind-memory`, day ahead / live | 0.253 / 0.212 kn | 0.253 / 0.213 kn |
+| tide against official streams, race area (29 points), correlation | 0.57 | 0.62 |
+| the same, Tathong Channel (8 points) | 0.72 | 0.75 |
+| the same, whole model (514 points) | 0.65 | 0.65 |
+| Tathong Channel tide strength, model / official | 0.044 / 0.196 kn | 0.046 / 0.196 kn |
+
+(These runs use GFS wind after the fact and all 97 readings, so they are
+not the fourth round's numbers; only the two columns compare.)
+
+The chart improves the shape of the tide in the race area and leaves the
+readings' score where it was: the readings are mid-day drifts moved mostly by
+the wind, and the race-area tide is about 0.1 kn. Tathong Channel's tide stays
+at a quarter of the official strength with real depths, so the cause is not
+the depths there. The likely one is the harbour behind it: GEBCO has the Lei
+Yue Mun gap as land, which shuts the harbour's tide out of the channel.
+
 ### Fourth round: sensors around the venue, and the Current Coach variants
 
 The aim is a three-tier model: the physics model on the best depths (tier
