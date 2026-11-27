@@ -262,6 +262,61 @@ model (`wind.py`). These have been built for Hong Kong and for Biscayne Bay.
 Still simulated: the tests of the correction, the scoring and the blend,
 which use a venue (`synthetic.py`) whose answer is known.
 
+### Sixth round: Biscayne Bay tides
+
+Willie sails inside Biscayne Bay, where no current meter reports, so the bay
+was scored against NOAA's own predictions: water level at 11 bay tide
+stations (6-minute heights or high and low water) and tidal current at 7
+prediction stations in and around Government Cut. A 60-hour tide-only run
+from 10 November 2026, chart depths, physics runs keeping their water level
+(`GriddedField.eta`, `level()`).
+
+Bay tide range (model / NOAA) and timing (minus means the model is early), at 100 m cells:
+
+| Bottom roughness (Manning n) | Range, typical | Timing, typical | South bay (Elliott Key) |
+|---|---|---|---|
+| 0.020 | 0.93 to 1.10 | 15 to 50 min early | 1.24, 46 min early |
+| 0.025 | 0.89 to 1.06 | 10 to 45 min early | 1.22, 47 min early |
+| 0.032 | 0.87 to 1.00 | 0 to 25 min early | 1.19, 46 min early |
+| 0.040 | 0.83 to 0.97 | 0 to 20 min early | 1.16, 46 min early |
+| 0.050 | 0.78 to 0.93 | 10 early to 12 late | 1.14, 46 min early |
+
+Correlation with NOAA's curves is 0.99 everywhere. About 0.035 is the best
+compromise and is what the nightly maps use. Extending the box south over
+the whole bay to Card Sound made little difference in the south and took
+5 to 10% off the range elsewhere. The south-bay lead is still not explained.
+
+The cuts are the weak spot. Peak current at NOAA's Government Cut stations is
+30 to 70% of NOAA's, and the model is 20 to 70 minutes early. Going from
+100 m to 75 m cells helps a little (Harbor Entrance 1.43 to 1.68 kn against
+NOAA's 2.42). Even the fastest cell within 200 m reaches only 1.5 to 1.8 kn,
+so the problem is the cut's width in cells, not where we sample. Resolving the
+cut would take about 25 m cells, which is too costly for the whole bay.
+
+So `corrections.py` corrects the physics to NOAA's harmonic current predictions
+near each station. Over the run, it fits a gain and a time shift along the
+station's flow axis, then applies them with a Gaussian fade (600 m) so the open
+bay keeps the model's own currents. Because NOAA's predictions are known in
+advance, this works for a forecast. Results (error in kn, rms of NOAA's
+current in brackets):
+
+| Station | NOAA rms | Raw | Corrected without this station | Corrected |
+|---|---|---|---|---|
+| MIH0802 sea channel | 1.16 | 0.81 | 0.69 | 0.36 |
+| MIH0804 | 1.14 | 0.57 | 0.47 | 0.44 |
+| MIH0807 | 0.66 | 0.27 | 0.18 | 0.21 |
+| MIH0808 | 0.74 | 0.57 | 0.55 | 0.18 |
+| MIH0901 Harbor Entrance | 1.67 | 0.75 | 0.56 | 0.41 |
+
+(75 m run; the 100 m run is similar.) The nightly Miami maps now cover the bay
+from Miami Beach to Elliott Key on 100 m cells with `--manning 0.035
+--current-stations ...`.
+
+For Hong Kong this says two things. Tide height inside an enclosed water is a
+much easier target than the current in a narrow channel. And where an agency
+publishes current predictions (the Hydrographic Office's tidal stream
+stations), they should correct the physics locally in the same way.
+
 ### Fifth round: Miami, a venue with real current meters
 
 Hong Kong has no open current meter and eight days of drifts, so ideas

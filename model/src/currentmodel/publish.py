@@ -383,6 +383,26 @@ def models_for(suite, wind: Conditions, lat: float, lon: float) -> dict:
     }
 
 
+def corrected_suite(suite, stations: Mapping[str, tuple[float, float]], start: float, end: float, log: Callable[[str], None] | None = None):
+    """The suite's physics models corrected near NOAA current stations, as a plain mapping; the suite unchanged if the predictions cannot be read."""
+    from .baseline import load_noaa_current_predictions
+    from .corrections import StationCorrected, fit_station_corrections
+
+    log = log or (lambda message: None)
+    models = {name: suite[name] for name in ("global", "venue-tide", "venue-weather")}
+    try:
+        reference = load_noaa_current_predictions(dict(stations), start - DAY_S, end + DAY_S)
+    except Exception as problem:  # the maps still work uncorrected
+        log(f"  NOAA current predictions not available ({problem}); physics left uncorrected")
+        return models
+    fits = fit_station_corrections(models["venue-tide"], reference, start + SPINUP_S / 2, end, list(stations))
+    for c in fits:
+        log(f"  {c.name}: physics x{c.gain:.2f}, {c.shift_s / 60:+.0f} min to match NOAA")
+    for name in ("venue-tide", "venue-weather"):
+        models[name] = StationCorrected(models[name], fits)
+    return models
+
+
 def issue_hour_utc(lon: float) -> int:
     """The UTC hour that is about 18:00 by the sun at this longitude: the evening's build."""
     return int(round(18.0 - lon / 15.0)) % 24
@@ -405,13 +425,17 @@ def build_days(
     wind_sources: Sequence[str] = WIND_SOURCES,
     log: Callable[[str], None] | None = None,
     shore: Shore | None = None,
+    current_stations: Mapping[str, tuple[float, float]] | None = None,
     **build_options,
 ) -> dict[str, dict[str, bytes]]:
     """Each model's file for each of ``days`` (consecutive UTC days), from one run of the models.
 
     Returns ``{model id: {day: file bytes}}``. With ``issued_before`` only
     forecasts issued by then are used. With ``shore`` no model's current
-    crosses the coast.
+    crosses the coast. With ``current_stations`` (NOAA current prediction
+    stations, id to (lat, lon)) the physics models are corrected near each
+    station to NOAA's predicted strength and timing (see
+    :mod:`currentmodel.corrections`).
     """
     log = log or (lambda message: None)
     cache = Path(cache_dir) if cache_dir else None
@@ -429,6 +453,8 @@ def build_days(
         cache_dir=cache, wind=wind, models=("global", "venue-tide", "venue-weather"),
         log=log, issued_before=issued_before, **build_options,
     )
+    if current_stations:
+        suite = corrected_suite(suite, current_stations, start, end, log)
     models = models_for(suite, wind, lat, lon)
     lats, lons = grid.points()
     probe = day_start(days[0]) + 12 * HOUR_S
@@ -450,6 +476,7 @@ def manifest_for(
     kinds: Mapping[str, str],
     issued: Mapping[str, float],
     mask: Mapping | None = None,
+    sources: Sequence[str] = (),
 ) -> dict:
     return {
         "version": 1,
@@ -468,7 +495,7 @@ def manifest_for(
             }
             for info in MODELS
         ],
-        "attribution": ATTRIBUTION,
+        "attribution": ATTRIBUTION + [s for s in sources if s not in ATTRIBUTION],
     }
 
 
@@ -549,7 +576,10 @@ def run(
         files = build_days(lat, lon, width_m, height_m, wanted, grid, **common)
         for day in wanted:
             kinds[day], issued[day] = ("analysis" if day == today else "forecast"), now
-    return publish(target, venue, manifest_for(venue, grid, files, kinds, issued, mask), files, log)
+    sources = (["NOAA electronic navigational charts (depths and coastline)"] if charted_water is not None else []) + (
+        ["NOAA tidal current predictions"] if build_options.get("current_stations") else []
+    )
+    return publish(target, venue, manifest_for(venue, grid, files, kinds, issued, mask, sources), files, log)
 
 
 NOAA_CHARTS = "https://charts.noaa.gov/ENCs/{cell}.zip"
@@ -608,6 +638,9 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--chart-datum", type=float, default=0.0, help="how far mean sea level is above the charts' datum, in metres")
     parser.add_argument("--max-depth", type=float, default=None,
                         help="cap the model's depths here (m): water deeper than this hardly matters to the venue and slows the run")
+    parser.add_argument("--manning", type=float, default=None, help="bottom roughness of the venue physics model (Manning n; default 0.025)")
+    parser.add_argument("--current-stations", default=None,
+                        help="NOAA current prediction stations to correct the physics to, as ID:lat:lon, comma separated (MIH0901:25.764:-80.134)")
     args = parser.parse_args(argv)
 
     if bool(args.out) == bool(args.server):
@@ -629,6 +662,14 @@ def main(argv: list[str] | None = None) -> None:
 
             extra["charted_water"] = chart_depth_source(read_charts(paths), None, args.chart_datum, cell_m=min(args.dx, 50.0)).water
         extra["refine_depths"] = lambda base: depth_refiner(base, paths, args.chart_datum, args.max_depth, min(args.dx, 50.0), print)
+    if args.manning is not None:
+        extra["manning"] = args.manning
+    if args.current_stations:
+        stations = {}
+        for item in args.current_stations.split(","):
+            sid, la, lo = item.strip().split(":")
+            stations[sid] = (float(la), float(lo))
+        extra["current_stations"] = stations
     manifest = run(
         target, args.venue, args.name, args.lat, args.lon, args.width_km * 1000.0, args.height_km * 1000.0,
         days=days, step_m=args.step_m, time_zone=args.time_zone, cache_dir=args.cache, dx=args.dx, log=print, **extra,

@@ -133,14 +133,15 @@ class GriddedField:
     def save(self, path: str | Path) -> None:
         g = self.grid
         np.savez_compressed(
-            path, lat0=g.lat0, lon0=g.lon0, x0=g.x0, y0=g.y0, dx=g.dx, depth=g.depth, times=self.times, u=self.u, v=self.v
+            path, lat0=g.lat0, lon0=g.lon0, x0=g.x0, y0=g.y0, dx=g.dx, depth=g.depth, times=self.times, u=self.u, v=self.v,
+            **({} if self.eta is None else {"eta": self.eta}),
         )
 
     @classmethod
     def load(cls, path: str | Path) -> "GriddedField":
         with np.load(path) as f:
             grid = Grid(float(f["lat0"]), float(f["lon0"]), float(f["x0"]), float(f["y0"]), float(f["dx"]), f["depth"])
-            return cls(grid, f["times"], f["u"], f["v"])
+            return cls(grid, f["times"], f["u"], f["v"], f["eta"] if "eta" in f.files else None)
 
 
 def simulate(
