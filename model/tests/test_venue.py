@@ -55,3 +55,16 @@ def test_better_local_depths_replace_the_global_ones(monkeypatch):
     x, y = grid.centres_xy()
     assert np.allclose(grid.depth[(np.abs(y) < 400.0) & grid.wet], 35.0)
     assert np.allclose(grid.depth[(y > 1000.0) & (x < 0.0)], 20.0)
+
+
+def test_a_channel_meeting_only_at_corners_is_opened():
+    from currentmodel.venue import open_diagonals
+
+    water = np.eye(5, dtype=bool)  # a staircase from corner to corner
+    opened = open_diagonals(water)
+    assert opened[water].all()
+    from scipy import ndimage
+
+    labels, count = ndimage.label(opened)  # four-neighbour connection
+    assert count == 1
+    assert opened.sum() == 9

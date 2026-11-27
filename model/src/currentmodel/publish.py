@@ -256,17 +256,22 @@ def unpack(data: bytes):
     return values[:, 0], values[:, 1]
 
 
-def water_mask(grid: MapGrid, detail: int = MASK_DETAIL, cache_dir: str | Path | None = None) -> np.ndarray:
+def water_mask(grid: MapGrid, detail: int = MASK_DETAIL, cache_dir: str | Path | None = None, charted=None) -> np.ndarray:
     """Where the sea is, ``detail`` times finer than the map: True for water, row 0 the southernmost.
 
     From the same elevation tiles that give the physics model its coast
-    (about 30 m at their finest), so the two agree.
+    (about 30 m at their finest), so the two agree; where ``charted(lat, lon)``
+    (a chart depth source's ``water``) knows better, from the charts.
     """
     lats = np.linspace(grid.south, grid.north, (grid.rows - 1) * detail + 1)
     lons = np.linspace(grid.west, grid.east, (grid.cols - 1) * detail + 1)
     lat, lon = np.meshgrid(lats, lons, indexing="ij")
     # The same threshold as the physics grid: water reads zero in these tiles, give or take specks of noise.
-    return np.asarray(elevation(lat, lon, 12, cache_dir)) <= LAND_ABOVE_M
+    water = np.asarray(elevation(lat, lon, 12, cache_dir)) <= LAND_ABOVE_M
+    if charted is not None:
+        verdict = np.asarray(charted(lat, lon), dtype=float)
+        water = np.where(np.isnan(verdict), water, verdict > 0.5)
+    return water
 
 
 def shore_for(grid: MapGrid, water: np.ndarray, detail: int = MASK_DETAIL) -> Shore:
@@ -378,6 +383,26 @@ def models_for(suite, wind: Conditions, lat: float, lon: float) -> dict:
     }
 
 
+def corrected_suite(suite, stations: Mapping[str, tuple[float, float]], start: float, end: float, log: Callable[[str], None] | None = None):
+    """The suite's physics models corrected near NOAA current stations, as a plain mapping; the suite unchanged if the predictions cannot be read."""
+    from .baseline import load_noaa_current_predictions
+    from .corrections import StationCorrected, fit_station_corrections
+
+    log = log or (lambda message: None)
+    models = {name: suite[name] for name in ("global", "venue-tide", "venue-weather")}
+    try:
+        reference = load_noaa_current_predictions(dict(stations), start - DAY_S, end + DAY_S)
+    except Exception as problem:  # the maps still work uncorrected
+        log(f"  NOAA current predictions not available ({problem}); physics left uncorrected")
+        return models
+    fits = fit_station_corrections(models["venue-tide"], reference, start + SPINUP_S / 2, end, list(stations))
+    for c in fits:
+        log(f"  {c.name}: physics x{c.gain:.2f}, {c.shift_s / 60:+.0f} min to match NOAA")
+    for name in ("venue-tide", "venue-weather"):
+        models[name] = StationCorrected(models[name], fits)
+    return models
+
+
 def issue_hour_utc(lon: float) -> int:
     """The UTC hour that is about 18:00 by the sun at this longitude: the evening's build."""
     return int(round(18.0 - lon / 15.0)) % 24
@@ -400,13 +425,17 @@ def build_days(
     wind_sources: Sequence[str] = WIND_SOURCES,
     log: Callable[[str], None] | None = None,
     shore: Shore | None = None,
+    current_stations: Mapping[str, tuple[float, float]] | None = None,
     **build_options,
 ) -> dict[str, dict[str, bytes]]:
     """Each model's file for each of ``days`` (consecutive UTC days), from one run of the models.
 
     Returns ``{model id: {day: file bytes}}``. With ``issued_before`` only
     forecasts issued by then are used. With ``shore`` no model's current
-    crosses the coast.
+    crosses the coast. With ``current_stations`` (NOAA current prediction
+    stations, id to (lat, lon)) the physics models are corrected near each
+    station to NOAA's predicted strength and timing (see
+    :mod:`currentmodel.corrections`).
     """
     log = log or (lambda message: None)
     cache = Path(cache_dir) if cache_dir else None
@@ -424,6 +453,8 @@ def build_days(
         cache_dir=cache, wind=wind, models=("global", "venue-tide", "venue-weather"),
         log=log, issued_before=issued_before, **build_options,
     )
+    if current_stations:
+        suite = corrected_suite(suite, current_stations, start, end, log)
     models = models_for(suite, wind, lat, lon)
     lats, lons = grid.points()
     probe = day_start(days[0]) + 12 * HOUR_S
@@ -445,6 +476,7 @@ def manifest_for(
     kinds: Mapping[str, str],
     issued: Mapping[str, float],
     mask: Mapping | None = None,
+    sources: Sequence[str] = (),
 ) -> dict:
     return {
         "version": 1,
@@ -463,7 +495,7 @@ def manifest_for(
             }
             for info in MODELS
         ],
-        "attribution": ATTRIBUTION,
+        "attribution": ATTRIBUTION + [s for s in sources if s not in ATTRIBUTION],
     }
 
 
@@ -499,6 +531,7 @@ def run(
     time_zone: str | None = None,
     cache_dir: str | Path | None = None,
     log: Callable[[str], None] | None = None,
+    charted_water: Callable | None = None,
     **build_options,
 ) -> dict:
     """Build and publish a venue.
@@ -517,7 +550,7 @@ def run(
     mask = shore = None
     try:
         log("drawing the coastline")
-        coast = water_mask(grid, MASK_DETAIL, Path(cache_dir) / "tiles" if cache_dir else None)
+        coast = water_mask(grid, MASK_DETAIL, Path(cache_dir) / "tiles" if cache_dir else None, charted_water)
         mask, shore = pack_mask(coast, MASK_DETAIL), shore_for(grid, coast)
     except Exception as problem:  # the map still works without it, with a coarser shore
         log(f"  coastline not available ({problem})")
@@ -543,7 +576,46 @@ def run(
         files = build_days(lat, lon, width_m, height_m, wanted, grid, **common)
         for day in wanted:
             kinds[day], issued[day] = ("analysis" if day == today else "forecast"), now
-    return publish(target, venue, manifest_for(venue, grid, files, kinds, issued, mask), files, log)
+    sources = (["NOAA electronic navigational charts (depths and coastline)"] if charted_water is not None else []) + (
+        ["NOAA tidal current predictions"] if build_options.get("current_stations") else []
+    )
+    return publish(target, venue, manifest_for(venue, grid, files, kinds, issued, mask, sources), files, log)
+
+
+NOAA_CHARTS = "https://charts.noaa.gov/ENCs/{cell}.zip"
+
+
+def fetch_noaa_charts(cells: Sequence[str], folder: Path, log: Callable[[str], None] | None = None) -> list[Path]:
+    """Download free NOAA chart cells (US ENC, public domain) into ``folder``, keeping copies already there."""
+    import urllib.request
+
+    log = log or (lambda message: None)
+    folder.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for cell in cells:
+        path = folder / f"{cell}.zip"
+        if not path.exists():
+            log(f"fetching chart {cell}")
+            request = urllib.request.Request(NOAA_CHARTS.format(cell=cell), headers={"User-Agent": "currentmodel"})
+            path.write_bytes(urllib.request.urlopen(request, timeout=300).read())
+        paths.append(path)
+    return paths
+
+
+def depth_refiner(base, charts: Sequence[Path], datum_m: float, max_depth_m: float | None, cell_m: float, log=None):
+    """GEBCO with charts laid over it, capped at ``max_depth_m``; the charts' coastline is kept."""
+    from .build import better_depths
+
+    source = better_depths(base, charts, datum_m, cell_m=cell_m, log=log) if charts else base
+    if source is None or max_depth_m is None:
+        return source
+
+    def capped(lat, lon):
+        return np.minimum(np.asarray(source(lat, lon), dtype=float), max_depth_m)
+
+    if hasattr(source, "water"):
+        capped.water = source.water
+    return capped
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -561,6 +633,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--out", default=None, help="folder to publish into")
     parser.add_argument("--server", default=None, help="server to publish to; its token is read from CURRENT_MODELS_UPLOAD_TOKEN")
     parser.add_argument("--cache", default=None, help="folder to keep downloaded data in")
+    parser.add_argument("--charts", default=None,
+                        help="free NOAA chart cells to lay over GEBCO's depths, comma separated (US5MIACC,...); fetched from charts.noaa.gov")
+    parser.add_argument("--chart-datum", type=float, default=0.0, help="how far mean sea level is above the charts' datum, in metres")
+    parser.add_argument("--max-depth", type=float, default=None,
+                        help="cap the model's depths here (m): water deeper than this hardly matters to the venue and slows the run")
+    parser.add_argument("--manning", type=float, default=None, help="bottom roughness of the venue physics model (Manning n; default 0.025)")
+    parser.add_argument("--current-stations", default=None,
+                        help="NOAA current prediction stations to correct the physics to, as ID:lat:lon, comma separated (MIH0901:25.764:-80.134)")
     args = parser.parse_args(argv)
 
     if bool(args.out) == bool(args.server):
@@ -573,9 +653,26 @@ def main(argv: list[str] | None = None) -> None:
     else:
         target = Folder(args.out)
     days = [day.strip() for day in args.days.split(",") if day.strip()] if args.days else None
+    extra = {}
+    cells = [c.strip() for c in args.charts.split(",") if c.strip()] if args.charts else []
+    if cells or args.max_depth:
+        paths = fetch_noaa_charts(cells, Path(args.cache or ".") / "charts", log=print) if cells else []
+        if paths:
+            from .charts import chart_depth_source, read_charts
+
+            extra["charted_water"] = chart_depth_source(read_charts(paths), None, args.chart_datum, cell_m=min(args.dx, 50.0)).water
+        extra["refine_depths"] = lambda base: depth_refiner(base, paths, args.chart_datum, args.max_depth, min(args.dx, 50.0), print)
+    if args.manning is not None:
+        extra["manning"] = args.manning
+    if args.current_stations:
+        stations = {}
+        for item in args.current_stations.split(","):
+            sid, la, lo = item.strip().split(":")
+            stations[sid] = (float(la), float(lo))
+        extra["current_stations"] = stations
     manifest = run(
         target, args.venue, args.name, args.lat, args.lon, args.width_km * 1000.0, args.height_km * 1000.0,
-        days=days, step_m=args.step_m, time_zone=args.time_zone, cache_dir=args.cache, dx=args.dx, log=print,
+        days=days, step_m=args.step_m, time_zone=args.time_zone, cache_dir=args.cache, dx=args.dx, log=print, **extra,
     )
     count = sum(len(model["days"]) for model in manifest["models"])
     print(f"published {args.venue}: {len(manifest['models'])} models, {count} day files in the manifest")

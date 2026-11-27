@@ -7,6 +7,7 @@ name: Publish current model maps
 on:
   schedule:
     - cron: "20 10 * * *" # 18:20 in Hong Kong
+    - cron: "20 23 * * *" # 18:20 in Miami (EST; 19:20 in summer)
   workflow_dispatch:
     inputs:
       days:
@@ -37,26 +38,59 @@ jobs:
             width_km: "44"
             height_km: "38"
             time_zone: Asia/Hong_Kong
+            evening_cron: "20 10 * * *"
+            options: ""
+          # Miami: depths from free NOAA charts, which also open Government Cut;
+          # Biscayne Bay from Miami Beach to Elliott Key on 100 m cells, chart depths
+          # capped where the Florida Straits drop away, rougher bottom (best match to
+          # NOAA's bay tide predictions) and the cuts corrected to NOAA's current predictions.
+          - id: miami
+            name: Miami
+            lat: "25.71"
+            lon: "-80.205"
+            width_km: "25"
+            height_km: "42"
+            time_zone: America/New_York
+            evening_cron: "20 23 * * *"
+            options: >-
+              --dx 100 --max-depth 40 --manning 0.035 --chart-datum 0.342
+              --current-stations MIH0802:25.760429:-80.126877,MIH0804:25.7646:-80.137428,MIH0807:25.764971:-80.151131,MIH0808:25.77335:-80.156921,MIH0814:25.77038:-80.187477,MIH0901:25.76405:-80.13394
+              --charts US4FL2AI,US4FL2AJ,US4FL2BI,US4FL2BJ,US5FL5LM,US5FL5LN,US5FL5MM,US5FL5MN,US5FL5MO,US5MIABA,US5MIABB,US5MIABC,US5MIABD,US5MIACB,US5MIACC,US5MIACD,US5MIADB,US5MIADC,US5MIADD
     steps:
+      # A scheduled run builds only the venue whose evening it is.
+      - name: Is it this venue's evening
+        id: due
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" != "${{ matrix.venue.evening_cron }}" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.due.outputs.run == 'true'
 
       - uses: actions/setup-python@v5
+        if: steps.due.outputs.run == 'true'
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: model/pyproject.toml
 
       - name: Install the model package
+        if: steps.due.outputs.run == 'true'
         run: pip install -e "model[data]"
 
       # Depths and coastline do not change from night to night.
       - uses: actions/cache@v4
+        if: steps.due.outputs.run == 'true'
         with:
           path: model-cache
           key: current-models-${{ matrix.venue.id }}-${{ github.run_id }}
           restore-keys: current-models-${{ matrix.venue.id }}-
 
       - name: Build and publish
+        if: steps.due.outputs.run == 'true'
         env:
           CURRENT_MODELS_UPLOAD_TOKEN: ${{ secrets.CURRENT_MODELS_UPLOAD_TOKEN }}
           SERVER: ${{ vars.CURRENT_MODELS_SERVER || 'https://m2xsailing.com' }}
@@ -77,4 +111,4 @@ jobs:
             --lat "${{ matrix.venue.lat }}" --lon "${{ matrix.venue.lon }}" \
             --width-km "${{ matrix.venue.width_km }}" --height-km "${{ matrix.venue.height_km }}" \
             --time-zone "${{ matrix.venue.time_zone }}" \
-            --server "$SERVER" --cache model-cache ${DAYS:+--days "$DAYS"}
+            --server "$SERVER" --cache model-cache ${DAYS:+--days "$DAYS"} ${{ matrix.venue.options }}

@@ -235,3 +235,16 @@ def test_server_sends_the_token_and_treats_a_missing_file_as_none(monkeypatch):
     monkeypatch.setattr(publish.urllib.request, "urlopen", refuse)
     with pytest.raises(RuntimeError, match="401"):
         server.put("index.json", b"{}")
+
+
+def test_depth_refiner_caps_depths_and_keeps_the_charts_coastline():
+    import numpy as np
+    from currentmodel.publish import depth_refiner
+
+    def base(lat, lon):
+        return np.full(np.shape(lat), 300.0)
+
+    capped = depth_refiner(base, [], 0.0, 60.0, 50.0)
+    assert capped(np.array([1.0]), np.array([2.0]))[0] == 60.0
+    base.water = lambda lat, lon: np.ones(np.shape(lat))
+    assert depth_refiner(base, [], 0.0, 60.0, 50.0).water is base.water

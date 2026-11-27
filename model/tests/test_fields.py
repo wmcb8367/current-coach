@@ -124,3 +124,15 @@ def test_simulated_tide_in_a_channel_condenses_into_harmonics():
     got, _ = harmonic.velocity(lat[2, 5], lon[2, 5], field.times[sample])
     error = np.sqrt(np.mean((got - field.u[sample, 2, 5]) ** 2))
     assert error < 0.05 * np.sqrt(np.mean(field.u[:, 2, 5] ** 2))
+
+
+def test_gridded_field_reports_water_level_when_kept():
+    grid = _grid()
+    x, y = grid.centres_xy()
+    times = np.array([0.0, 600.0])
+    zero = np.zeros((2,) + x.shape)
+    eta = np.array([1e-4 * x + 0.0 * y, 1e-4 * x + 0.5])
+    field = GriddedField(grid, times, zero, zero, eta)
+    lat, lon = to_latlon(np.array([1000.0]), np.array([1500.0]), LAT0, LON0)
+    assert np.allclose(field.level(lat, lon, np.array([300.0])), 0.1 + 0.25, atol=1e-6)
+    assert np.isnan(GriddedField(grid, times, zero, zero).level(lat, lon, np.array([300.0])))[0]

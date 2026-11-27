@@ -116,7 +116,9 @@ def build_grid(
     tiles where they hold any, otherwise from ``depth_zoom``.
 
     ``depth_source(lat, lon)`` may return better depths in metres, positive
-    down, with NaN where it has none.
+    down, with NaN where it has none. If it also has ``water(lat, lon)``
+    (chart depths do: 1 water, 0 land, NaN unknown), that sets the coastline
+    wherever it knows, in place of the tiles.
 
     The coarse ocean grids ramp from their depths up to the land heights
     beside them, so within about a kilometre of their own idea of the coast
@@ -134,7 +136,14 @@ def build_grid(
     cell_lat, cell_lon = to_latlon(x, y, lat, lon)
 
     fine = elevation(cell_lat, cell_lon, coast_zoom, cache_dir)
-    water = _open_water(fine <= land_above_m)
+    water = fine <= land_above_m
+    charted = getattr(depth_source, "water", None)
+    if charted is not None:
+        # Where charts cover the venue they say what is water: they keep cuts and harbours the tiles close.
+        verdict = np.asarray(charted(cell_lat, cell_lon), dtype=float)
+        water = np.where(np.isnan(verdict), water, verdict > 0.5)
+        water = open_diagonals(water)
+    water = _open_water(water)
 
     # Fine tiles without soundings read zero over water, with specks of noise
     # below it. Trust their depths only where most of the water has one.
@@ -156,6 +165,26 @@ def build_grid(
     nearest = ndimage.distance_transform_edt(~known, return_distances=False, return_indices=True)
     depth = np.maximum(depth[nearest[0], nearest[1]], shallowest_m)
     return Grid(lat, lon, x0, y0, dx, np.where(water, depth, 0.0))
+
+
+def open_diagonals(water: np.ndarray) -> np.ndarray:
+    """Join water cells that touch only at a corner, by wetting one of the two land cells beside them.
+
+    The solver passes water only across cell faces, so a narrow channel
+    running at an angle to the grid (a staircase of cells meeting at their
+    corners) would carry nothing. The land cell wetted is the first of the
+    pair; repeated until no such corner remains.
+    """
+    water = np.asarray(water, dtype=bool).copy()
+    for _ in range(10):
+        a, b, c, d = water[:-1, :-1], water[:-1, 1:], water[1:, :-1], water[1:, 1:]
+        main = a & d & ~b & ~c        # water at top-left and bottom-right only
+        anti = b & c & ~a & ~d        # water at top-right and bottom-left only
+        if not (main.any() or anti.any()):
+            break
+        water[:-1, 1:] |= main        # wet the top-right cell of each
+        water[:-1, :-1] |= anti       # wet the top-left cell of each
+    return water
 
 
 def _open_water(water: np.ndarray) -> np.ndarray:

@@ -69,10 +69,58 @@ tide there wrong.
 
 GEBCO is still coarse. In Hong Kong three quarters of its inshore cells
 are estimated from satellite gravity rather than sounded, and channels
-narrower than a kilometre are blurred. Better depths (a national chart, a
-survey, boats' own depth sounders) plug in through `depth_source` and
-nothing else changes. Hong Kong's electronic charts are free but need a
-registration and a licence agreement, so they are not wired in.
+narrower than a kilometre are blurred. Better depths plug in through
+`depth_source` and nothing else changes. Two kinds are built in, and
+`build.py` lays them over GEBCO with `--depth-logs` and `--charts`:
+
+**The boats' own soundings** (`sonarlog.py`, `soundings.py`). A chart
+plotter can log what its sounder sees: Lowrance, Simrad and B&G sonar logs
+(`.sl2`, `.sl3`), Garmin tracks with depth (`.gpx`), NMEA logs and plain
+tables are read. The tide is taken out with the tide at the time of each
+sounding (for Hong Kong the Observatory's hourly predictions,
+`hk_predicted_tide`) and the transducer's depth added. Each 50 m cell keeps
+the median of its soundings, a cell that disagrees with its neighbours is
+dropped as a false echo, and the difference from GEBCO is spread between
+the tracks: in full to 500 m from a sounding, fading to GEBCO at 1 km. This
+is free and covers exactly the water a team sails on.
+
+```
+python -m currentmodel.build --lat 22.27 --lon 114.30 --width-km 20 --height-km 20 --out clearwater \
+    --depth-logs logs/*.sl2 --tide-station TMW --transducer 0.4
+```
+
+The same code reads the IHO's open archive of crowdsourced soundings
+(public domain, hosted by NOAA). It holds nothing for Hong Kong, because it
+publishes data inside a country's waters only where that country agreed,
+and a great deal for United States coasts. Tried on 110,000 of its
+soundings from 21 boats in Biscayne Bay: taking the tide out brought
+different boats closer to each other (depths built from half the boats
+missed the other half's soundings by a median 0.64 m before and 0.44 m
+after; the other way round 0.42 m and 0.39 m). The boats still differ by
+about 0.4 m, because the archive does not say how deep each transducer
+sits, and GEBCO there is already built from surveys and is as close. So for anonymous soundings
+each boat needs levelling against the others first, which is not built;
+for a team's own boats the transducer depth is known.
+
+**Electronic charts** (`charts.py`): soundings, depth contours and depth
+areas from S-57 chart cells, with the more detailed chart winning where
+charts overlap, and no depth allowed outside the range its depth area
+gives. Chart depths are below chart datum, so say how far mean sea level
+is above it (`--chart-datum`, about 1.44 m at Tai Miu Wan). United States
+charts are free. Hong Kong's are sold by the Hydrographic Office (HK$540 a
+year) and may come encrypted, which this does not read. A bought chart, or
+a grid made from one, must stay out of this repository.
+
+Checked on two NOAA charts of Miami (US5FL22M at 1:12,000 and US4FL20M at
+1:80,000): the reader finds the same 9,769 soundings, the same contour
+depths and the same 1,320 depth areas, to within half a percent of area, as
+GDAL's S-57 driver. Depths built from the harbour chart sit a median 0.07 m
+from its own soundings, where GEBCO is 0.95 m off. And they agree with the
+crowd soundings of boats under way to between 0.1 and 0.6 m, the boats
+reading shallower as a transducer below the waterline should. The same
+comparison showed what else is in that archive: boats on their moorings
+logging one spot thousands of times, and ships whose sounders sit at the
+keel and read 1.5 to 5 m short.
 
 ### The drift correction
 
@@ -213,6 +261,167 @@ model (`wind.py`). These have been built for Hong Kong and for Biscayne Bay.
 
 Still simulated: the tests of the correction, the scoring and the blend,
 which use a venue (`synthetic.py`) whose answer is known.
+
+### Sixth round: Biscayne Bay tides
+
+Willie sails inside Biscayne Bay, where no current meter reports, so the bay
+was scored against NOAA's own predictions: water level at 11 bay tide
+stations (6-minute heights or high and low water) and tidal current at 7
+prediction stations in and around Government Cut. A 60-hour tide-only run
+from 10 November 2026, chart depths, physics runs keeping their water level
+(`GriddedField.eta`, `level()`).
+
+Bay tide range (model / NOAA) and timing (minus means the model is early), at 100 m cells:
+
+| Bottom roughness (Manning n) | Range, typical | Timing, typical | South bay (Elliott Key) |
+|---|---|---|---|
+| 0.020 | 0.93 to 1.10 | 15 to 50 min early | 1.24, 46 min early |
+| 0.025 | 0.89 to 1.06 | 10 to 45 min early | 1.22, 47 min early |
+| 0.032 | 0.87 to 1.00 | 0 to 25 min early | 1.19, 46 min early |
+| 0.040 | 0.83 to 0.97 | 0 to 20 min early | 1.16, 46 min early |
+| 0.050 | 0.78 to 0.93 | 10 early to 12 late | 1.14, 46 min early |
+
+Correlation with NOAA's curves is 0.99 everywhere. About 0.035 is the best
+compromise and is what the nightly maps use. Extending the box south over
+the whole bay to Card Sound made little difference in the south and took
+5 to 10% off the range elsewhere. The south-bay lead is still not explained.
+
+The cuts are the weak spot. Peak current at NOAA's Government Cut stations is
+30 to 70% of NOAA's, and the model is 20 to 70 minutes early. Going from
+100 m to 75 m cells helps a little (Harbor Entrance 1.43 to 1.68 kn against
+NOAA's 2.42). Even the fastest cell within 200 m reaches only 1.5 to 1.8 kn,
+so the problem is the cut's width in cells, not where we sample. Resolving the
+cut would take about 25 m cells, which is too costly for the whole bay.
+
+So `corrections.py` corrects the physics to NOAA's harmonic current predictions
+near each station. Over the run, it fits a gain and a time shift along the
+station's flow axis, then applies them with a Gaussian fade (600 m) so the open
+bay keeps the model's own currents. Because NOAA's predictions are known in
+advance, this works for a forecast. Results (error in kn, rms of NOAA's
+current in brackets):
+
+| Station | NOAA rms | Raw | Corrected without this station | Corrected |
+|---|---|---|---|---|
+| MIH0802 sea channel | 1.16 | 0.81 | 0.69 | 0.36 |
+| MIH0804 | 1.14 | 0.57 | 0.47 | 0.44 |
+| MIH0807 | 0.66 | 0.27 | 0.18 | 0.21 |
+| MIH0808 | 0.74 | 0.57 | 0.55 | 0.18 |
+| MIH0901 Harbor Entrance | 1.67 | 0.75 | 0.56 | 0.41 |
+
+(75 m run; the 100 m run is similar.) The nightly Miami maps now cover the bay
+from Miami Beach to Elliott Key on 100 m cells with `--manning 0.035
+--current-stations ...`.
+
+For Hong Kong this says two things. Tide height inside an enclosed water is a
+much easier target than the current in a narrow channel. And where an agency
+publishes current predictions (the Hydrographic Office's tidal stream
+stations), they should correct the physics locally in the same way.
+
+### Fifth round: Miami, a venue with real current meters
+
+Hong Kong has no open current meter and eight days of drifts, so ideas
+like "a sensor nearby predicts the local current" cannot be tested there.
+Miami can: NOAA's PORTS current meters at the Government Cut approach have
+read every six minutes for over a year, and the charts are free. Miami was
+built as the second venue to test the method against that record and carry
+the lessons back.
+
+**Venue.** Centre 25.71 N, 80.1925 W, 27.5 by 36 km, 150 m cells, depths
+from 19 free NOAA chart cells over GEBCO (capped at 60 m, where the
+Florida Straits drop away; the open edge takes STOFS's level and current).
+Sensors (`python -m currentmodel.sensors --lat 25.70 --lon -80.17`): 78,
+including three current meters (LB M at the sea buoy, 38 m deep; LB1, 16
+m; LB3, 11 m; all on the approach channel outside the jetties), two at
+Port Everglades 44 km north, the Virginia Key and Port Everglades tide
+gauges with their wind and pressure (now read by `sensors.py`), and NOAA's
+harmonic current predictions for Government Cut (`load_noaa_current_predictions`).
+
+**What the charts fixed.** The terrain tiles close Government Cut and
+PortMiami's channels, so the bay had no harbour mouth. Charts now set the
+coastline wherever they cover the venue (`water` on a chart depth source),
+and channels that run at an angle to the grid, meeting only at cell
+corners, are opened (`venue.open_diagonals`). After that the cut carries
+the tide in step with NOAA's prediction (correlation 0.90) but at half its
+strength (1.2 against 2.6 kn at spring tides): a 300 m channel in 150 m
+cells, the same failure as Hong Kong's Tathong Channel.
+
+**A year of meter data (`meters.py`).** Tide fitted to Oct 2025 to May
+2026, tested on Jun to Nov 2026; day ahead means each day's sailing hours
+(9 to 16 local) predicted from what is known at 18:00 the evening before,
+held out a day at a time (308 to 414 days).
+
+| | sea buoy | LB1 | LB3 |
+| --- | --- | --- | --- |
+| current (rms) | 0.86 kn | 0.34 kn | 0.27 kn |
+| largest tidal constituent (M2) | 0.06 kn | 0.10 kn | 0.17 kn |
+| left by a perfect tide prediction | 0.69 kn | 0.29 kn | 0.22 kn |
+| + the meter's own last 6 h | 0.56 | 0.27 | 0.21 |
+| + the day's wind (6 h) | 0.67 | 0.27 | 0.21 |
+| + wind memory (pile-up) | no gain | no gain | no gain |
+| + tide gauge surplus | no gain | no gain | no gain |
+| + NOAA ocean forecast (RTOFS), issued the day before | 0.62 | 0.27 | 0.21 |
+| last 6 h + wind | **0.55** | **0.26** | **0.20** |
+
+- Outside the jetties the tide is a small part of the current. The sea
+  buoy sits on the Florida Current's inshore edge (0.28 kn north on
+  average, past 1.5 kn some weeks); neither STOFS nor the venue physics
+  model carries the ocean circulation, and RTOFS (1/12 degree, nearest
+  water 8 km out, `rtofs.py`) adds little once the meter's own reading is
+  known.
+- The non-tidal current lasts: correlation 0.54 a day later at the sea
+  buoy, 0.34 in the channel, gone after three days. That is why the
+  meter's own evening reading is the best single predictor of tomorrow.
+- A meter 0.6 to 1.6 km away explains about a third of the non-tidal
+  current at the same moment; one 44 km away (Port Everglades) about 5%.
+  A sensor nearby is worth a lot live and some the next day; a distant one
+  little.
+- The water answers the wind at 0.9 to 2.2% of its speed, turned 15 to 40
+  degrees to its right.
+- Rain (Miami airport) and the rivers GloFAS finds (screened with
+  `drivers.py`, 242 to 730 candidates) explain nothing measurable.
+- Willie's pile-up idea (water returning after days of wind ease) shows
+  nothing here, on an open coast with a strong ocean current; Hong Kong's
+  evidence for it is from a semi-enclosed coast and should be tested again
+  on more Hong Kong days rather than assumed general.
+
+**The Current Coach variants at the meters**, four weeks of physics runs
+(10 to 17 Jan, Apr, Jul and Oct 2026), 224 sailing hours a meter. Day-ahead
+error over no-current error (lower is better):
+
+| Variant | sea buoy | LB1 | LB3 |
+| --- | --- | --- | --- |
+| `cc-physics` | 1.03 | 1.02 | 0.96 |
+| `cc-wind` | 1.03 | 1.02 | 0.97 |
+| `cc-wind-memory` | 1.04 | 1.03 | 0.97 |
+| `cc-wind-turned` (new) | 0.98 | **0.95** | **0.90** |
+| `cc-ocean` (new) | **0.83** | 0.97 | 0.94 |
+| `cc-sea-level` | 1.08 | 1.06 | 1.00 |
+| `global` as published | 1.02 | 1.02 | 0.91 |
+
+The physics model earns little weight at the outer two meters: its tide
+there is about twice the measured one, and in April its weather run drives
+a 0.3 kn southward flow the meter did not see. These four weeks are short
+next to the year above; the meter study is the stronger evidence.
+
+**What this means for Hong Kong**
+1. Narrow channels need finer cells or a channel correction: Government
+   Cut and Tathong Channel both come out at about half strength.
+2. Let the wind response turn: `cc-wind-turned` was the best of the
+   wind variants at the two inshore meters. Hong Kong's eight days found no
+   turn; test again as days of readings grow.
+3. Yesterday's non-tidal current is the best day-ahead predictor where it
+   can be measured. In Hong Kong the drifts of the last sailing day play
+   that part: carry the live tuner's "today's pattern" into tomorrow with a
+   memory of about a day, fading, instead of resetting overnight.
+4. Charts set the coastline as well as the depths; with a Hong Kong chart
+   the harbour and channel mouths would be checked the same way.
+5. Wind memory and sea level should stay separate variants, not defaults,
+   until Hong Kong's own readings decide.
+
+Commands: `python -m currentmodel.meters --sensors miami-sensors.json
+--start 2025-10-01 --end 2026-11-26 --utc-offset -5 --out miami-meters.json`
+(any venue with NOAA current meters). Figure:
+`miami-meters-2026-11-26.png` in the project files.
 
 ### Fourth round: sensors around the venue, and the Current Coach variants
 
