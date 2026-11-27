@@ -69,10 +69,58 @@ tide there wrong.
 
 GEBCO is still coarse. In Hong Kong three quarters of its inshore cells
 are estimated from satellite gravity rather than sounded, and channels
-narrower than a kilometre are blurred. Better depths (a national chart, a
-survey, boats' own depth sounders) plug in through `depth_source` and
-nothing else changes. Hong Kong's electronic charts are free but need a
-registration and a licence agreement, so they are not wired in.
+narrower than a kilometre are blurred. Better depths plug in through
+`depth_source` and nothing else changes. Two kinds are built in, and
+`build.py` lays them over GEBCO with `--depth-logs` and `--charts`:
+
+**The boats' own soundings** (`sonarlog.py`, `soundings.py`). A chart
+plotter can log what its sounder sees: Lowrance, Simrad and B&G sonar logs
+(`.sl2`, `.sl3`), Garmin tracks with depth (`.gpx`), NMEA logs and plain
+tables are read. The tide is taken out with the tide at the time of each
+sounding (for Hong Kong the Observatory's hourly predictions,
+`hk_predicted_tide`) and the transducer's depth added. Each 50 m cell keeps
+the median of its soundings, a cell that disagrees with its neighbours is
+dropped as a false echo, and the difference from GEBCO is spread between
+the tracks: in full to 500 m from a sounding, fading to GEBCO at 1 km. This
+is free and covers exactly the water a team sails on.
+
+```
+python -m currentmodel.build --lat 22.27 --lon 114.30 --width-km 20 --height-km 20 --out clearwater \
+    --depth-logs logs/*.sl2 --tide-station TMW --transducer 0.4
+```
+
+The same code reads the IHO's open archive of crowdsourced soundings
+(public domain, hosted by NOAA). It holds nothing for Hong Kong, because it
+publishes data inside a country's waters only where that country agreed,
+and a great deal for United States coasts. Tried on 110,000 of its
+soundings from 21 boats in Biscayne Bay: taking the tide out brought
+different boats closer to each other (depths built from half the boats
+missed the other half's soundings by a median 0.64 m before and 0.44 m
+after; the other way round 0.42 m and 0.39 m). The boats still differ by
+about 0.4 m, because the archive does not say how deep each transducer
+sits, and GEBCO there is already built from surveys and is as close. So for anonymous soundings
+each boat needs levelling against the others first, which is not built;
+for a team's own boats the transducer depth is known.
+
+**Electronic charts** (`charts.py`): soundings, depth contours and depth
+areas from S-57 chart cells, with the more detailed chart winning where
+charts overlap, and no depth allowed outside the range its depth area
+gives. Chart depths are below chart datum, so say how far mean sea level
+is above it (`--chart-datum`, about 1.44 m at Tai Miu Wan). United States
+charts are free. Hong Kong's are sold by the Hydrographic Office (HK$540 a
+year) and may come encrypted, which this does not read. A bought chart, or
+a grid made from one, must stay out of this repository.
+
+Checked on two NOAA charts of Miami (US5FL22M at 1:12,000 and US4FL20M at
+1:80,000): the reader finds the same 9,769 soundings, the same contour
+depths and the same 1,320 depth areas, to within half a percent of area, as
+GDAL's S-57 driver. Depths built from the harbour chart sit a median 0.07 m
+from its own soundings, where GEBCO is 0.95 m off. And they agree with the
+crowd soundings of boats under way to between 0.1 and 0.6 m, the boats
+reading shallower as a transducer below the waterline should. The same
+comparison showed what else is in that archive: boats on their moorings
+logging one spot thousands of times, and ships whose sounders sit at the
+keel and read 1.5 to 5 m short.
 
 ### The drift correction
 
@@ -213,6 +261,52 @@ model (`wind.py`). These have been built for Hong Kong and for Biscayne Bay.
 
 Still simulated: the tests of the correction, the scoring and the blend,
 which use a venue (`synthetic.py`) whose answer is known.
+
+### Better depths for Hong Kong: a 1960 Admiralty chart
+
+GEBCO is three quarters satellite-gravity guesses around Hong Kong and two
+thirds in the race area. A third search for free depth data (27 Nov 2026)
+found one source with real surveys behind it: British Admiralty chart 937,
+*Eastern Approaches to Hong Kong*, 1:50,000, 1960 (corrected to 1962),
+scanned at high resolution by the National Library of Australia and out of
+Crown copyright. 456 of its soundings, read by eye, are in
+`data/hong-kong/admiralty-937-soundings.csv` (sources, georeference and use
+in `data/hong-kong/README.md`). On the chart the race area is 23 m deep
+(median, below mean sea level) where GEBCO has 20 m, and single places
+differ by 5 m either way.
+
+What else was checked and is not usable:
+
+- Copernicus Marine's global coastal satellite depths (Sentinel-2, 100 m,
+  December 2025, free): around Hong Kong it reads about 23 to 24 m whatever
+  the real depth. Where GEBCO rests on real soundings of 10 to 20, 20 to 30
+  and over 30 m it gives a median 23, 24 and 24 m (correlation 0.28).
+- Newer global grids (SYSU_Topo, SDUST2023BCO) are satellite gravity at one
+  arc-minute, coarser than GEBCO; HHU24SWDSCS covers South China Sea reefs
+  only; the Pearl River Estuary datasets on Zenodo hold no Hong Kong depths.
+
+Scored with the same physics run (11.5 days from 15 Nov, 200 m cells, GFS
+wind), GEBCO against GEBCO plus the chart:
+
+| | GEBCO | with chart 937 |
+| --- | --- | --- |
+| `cc-physics`, day ahead / live (97 readings) | 0.294 / 0.220 kn | 0.295 / 0.220 kn |
+| `cc-wind`, day ahead / live | 0.259 / 0.212 kn | 0.259 / 0.214 kn |
+| `cc-wind-memory`, day ahead / live | 0.253 / 0.212 kn | 0.253 / 0.213 kn |
+| tide against official streams, race area (29 points), correlation | 0.57 | 0.62 |
+| the same, Tathong Channel (8 points) | 0.72 | 0.75 |
+| the same, whole model (514 points) | 0.65 | 0.65 |
+| Tathong Channel tide strength, model / official | 0.044 / 0.196 kn | 0.046 / 0.196 kn |
+
+(These runs use GFS wind after the fact and all 97 readings, so they are
+not the fourth round's numbers; only the two columns compare.)
+
+The chart improves the shape of the tide in the race area and leaves the
+readings' score where it was: the readings are mid-day drifts moved mostly by
+the wind, and the race-area tide is about 0.1 kn. Tathong Channel's tide stays
+at a quarter of the official strength with real depths, so the cause is not
+the depths there. The likely one is the harbour behind it: GEBCO has the Lei
+Yue Mun gap as land, which shuts the harbour's tide out of the channel.
 
 ### Fourth round: sensors around the venue, and the Current Coach variants
 
